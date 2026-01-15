@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>微信支付：确认收款</title>
+    <style>
+        body { margin: 0; background-color: #ededed; font-family: -apple-system, sans-serif; }
+        .kfc-prank-wrapper { display: flex; justify-content: center; align-items: center; height: 100vh; }
+
+        /* --- 诱饵层：仿微信转账卡片 --- */
+        .transfer-card {
+            width: 85%; max-width: 320px;
+            background: #fa9d3b; /* 微信经典转账橙 */
+            border-radius: 10px;
+            padding: 25px 20px;
+            text-align: center;
+            color: white;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .transfer-card:active { transform: scale(0.98); }
+        
+        .icon-box {
+            width: 55px; height: 55px; background: #fff; border-radius: 50%;
+            margin: 0 auto 15px; display: flex; align-items: center; justify-content: center;
+            color: #fa9d3b; font-size: 28px; font-weight: bold;
+        }
+
+        .transfer-title { font-size: 15px; opacity: 0.9; margin-bottom: 8px; }
+        .transfer-amount { font-size: 38px; font-weight: 500; margin-bottom: 25px; }
+        .btn-receive {
+            background: #fff; color: #fa9d3b; border: none; width: 100%;
+            padding: 12px 0; border-radius: 4px; font-size: 16px; font-weight: bold;
+        }
+
+        /* --- 真相层：疯四弹窗 --- */
+        .prank-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden; transition: 0.3s; z-index: 100;
+        }
+        .prank-overlay.active { opacity: 1; visibility: visible; }
+
+        .kfc-modal {
+            background: #fff; width: 80%; max-width: 350px;
+            padding: 30px; border-radius: 15px; text-align: center;
+            transform: translateY(20px); transition: 0.3s;
+        }
+        .active .kfc-modal { transform: translateY(0); }
+
+        .kfc-logo { font-size: 60px; display: block; margin-bottom: 10px; animation: bounce 1s infinite; }
+        .kfc-title { color: #e4002b; font-size: 22px; font-weight: bold; margin-bottom: 15px; }
+        .kfc-desc { color: #444; font-size: 15px; line-height: 1.6; text-align: left; background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+
+        .copy-btn {
+            background: #e4002b; color: white; border: none; width: 100%;
+            padding: 12px 0; border-radius: 25px; font-size: 15px; font-weight: bold;
+        }
+        .close-hint { margin-top: 15px; font-size: 13px; color: #999; }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="kfc-prank-wrapper">
+    <div class="transfer-card" onclick="triggerPrank()">
+        <div class="icon-box">¥</div>
+        <div class="transfer-title">待收款金额</div>
+        <div class="transfer-amount">50.00</div>
+        <button class="btn-receive">确认收款</button>
+    </div>
+</div>
+
+<div id="prankOverlay" class="prank-overlay">
+    <div class="kfc-modal">
+        <span class="kfc-logo">🍗</span>
+        <h2 class="kfc-title">提醒：收款失败</h2>
+        <div class="kfc-desc" id="kfcText">
+            系统检测到当前环境符合《肯德基法典》第51条：凡周四点击收款者，视为自愿请客。
+            <br><br>
+            <strong>今日任务：</strong>V我50，聆听我的炸鸡梦想。别看代码了，快去下单。
+        </div>
+        <button class="copy-btn" onclick="copyPrank()">复制文案 反击好友</button>
+        <div class="close-hint" onclick="closePrank()">点错了，我是穷鬼</div>
+    </div>
+</div>
+
+<script>
+    function triggerPrank() {
+        document.getElementById('prankOverlay').classList.add('active');
+    }
+    function closePrank() {
+        document.getElementById('prankOverlay').classList.remove('active');
+    }
+    function copyPrank() {
+        const text = "我刚才想给你转账，结果系统提示：今天是肯德基疯狂星期四，必须你V我50块吃炸鸡才能解锁收款功能。认命吧！";
+        navigator.clipboard.writeText(text).then(() => {
+            alert('整蛊文案已复制！');
+        });
+    }
+</script>
+
+</body>
+</html>
