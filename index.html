@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>《今天也不想上班》- 带薪摸鱼模拟器 V0.3</title>
+<title>《今天也不想上班》- 多关卡进阶版 V0.4</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, sans-serif; }
   body { background: #12131a; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; color: #333; }
@@ -13,14 +13,44 @@
     overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border-radius: 12px;
   }
 
-  /* 顶部 HUD */
+  /* 页面视图切换 */
+  .game-view { display: none; width: 100%; height: 100%; flex-direction: column; position: relative; }
+  .view-active { display: flex; }
+
+  /* 关卡选择大厅 (Lobby) */
+  #lobby-view { background: #2d3436; color: #fff; padding: 20px 16px; overflow-y: auto; }
+  .lobby-header { text-align: center; margin-bottom: 16px; }
+  .lobby-title { font-size: 22px; font-weight: 900; color: #00cec9; letter-spacing: 1px; }
+  .lobby-subtitle { font-size: 12px; color: #b2bec3; margin-top: 4px; }
+  
+  .gold-banner { background: #353b48; padding: 10px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; margin-bottom: 16px; }
+  
+  .level-card {
+    background: #353b48; border: 2px solid #718093; border-radius: 12px;
+    padding: 12px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s; position: relative;
+  }
+  .level-card:hover, .level-card:active { transform: translateY(-2px); border-color: #00cec9; background: #2f3640; }
+  .level-card.locked { opacity: 0.5; filter: grayscale(1); cursor: not-allowed; border-style: dashed; }
+  .level-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .level-num { background: #00cec9; color: #2d3436; font-size: 11px; font-weight: 900; padding: 2px 6px; border-radius: 4px; }
+  .level-stars { color: #f1c40f; font-size: 12px; }
+  .level-name { font-size: 15px; font-weight: 900; color: #fff; margin-bottom: 4px; }
+  .level-mechanic { font-size: 11px; color: #e17055; margin-bottom: 4px; font-weight: bold; }
+  .level-desc { font-size: 11px; color: #dcdde1; line-height: 1.3; }
+
+  .shop-btn {
+    background: #e17055; color: #fff; border: none; padding: 12px; border-radius: 10px;
+    font-size: 14px; font-weight: bold; cursor: pointer; text-align: center; margin-top: 8px;
+  }
+
+  /* 游戏内顶部 HUD */
   #top-hud {
     background: #2d3436; color: #fff; padding: 8px 12px; display: flex;
     justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold;
     z-index: 10;
   }
   .time-badge { background: #00cec9; color: #2d3436; padding: 3px 8px; border-radius: 6px; font-size: 14px; font-weight: 900; }
-  .warning-badge { background: #d63031; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+  .back-btn { background: #636e72; color: #fff; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
 
   /* 状态栏 */
   #status-bars {
@@ -43,7 +73,26 @@
     background-size: 20px 20px;
   }
 
-  /* 区域 */
+  /* 特殊关卡元素：摄像头 */
+  #camera-device {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    width: 50px; height: 35px; background: #2d3436; border-radius: 8px;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    color: #fff; font-size: 10px; font-weight: bold; z-index: 15; box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+  }
+  #camera-light {
+    position: absolute; top: 35px; left: 50%; transform-origin: top center;
+    width: 70px; height: 180px; background: rgba(235, 77, 75, 0.25);
+    clip-path: polygon(40% 0%, 60% 0%, 100% 100%, 0% 100%);
+    pointer-events: none; display: none; z-index: 14;
+    animation: camSweep 4s infinite ease-in-out alternate;
+  }
+  @keyframes camSweep {
+    0% { transform: translateX(-50%) rotate(-35deg); }
+    100% { transform: translateX(-50%) rotate(35deg); }
+  }
+
+  /* 区域与工位 */
   .room-area {
     position: absolute; border: 2px dashed #b2bec3; border-radius: 8px;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -53,7 +102,6 @@
   #toilet-room { top: 10px; right: 10px; width: 90px; height: 65px; background: #81ecec; border-color: #00cec9; color: #0097e6; }
   #water-cooler { top: 105px; left: 20px; width: 38px; height: 45px; background: #74b9ff; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
 
-  /* 工位与角色 */
   .desk {
     position: absolute; width: 85px; height: 60px; background: #fff;
     border: 2px solid #636e72; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
@@ -71,6 +119,8 @@
   .char-name { font-size: 10px; font-weight: bold; background: rgba(0,0,0,0.65); color: #fff; padding: 1px 4px; border-radius: 4px; margin-top: -3px; }
   
   #boss { top: 25px; left: 40px; background: #e17055; box-shadow: 0 0 12px rgba(225,112,85,0.6); }
+  #boss2 { top: 25px; left: 180px; background: #6c5ce7; box-shadow: 0 0 12px rgba(108,92,231,0.6); display: none; }
+  
   #player-avatar { position: absolute; top: -20px; font-size: 32px; }
   #status-bubble {
     position: absolute; top: -45px; background: #fff; border: 1.5px solid #2d3436;
@@ -79,21 +129,13 @@
   }
   @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-3px); } }
 
-  /* 监视与会议横幅 */
   #boss-stare-banner {
     position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
     background: #d63031; color: #fff; padding: 6px 14px; border-radius: 20px;
     font-size: 12px; font-weight: 900; display: none; z-index: 25;
     box-shadow: 0 4px 10px rgba(214,48,49,0.5);
   }
-  #meeting-banner {
-    position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
-    background: #6c5ce7; color: #fff; padding: 6px 14px; border-radius: 20px;
-    font-size: 12px; font-weight: 900; display: none; z-index: 25;
-    box-shadow: 0 4px 10px rgba(108,92,231,0.5);
-  }
 
-  /* 警报红边 */
   #danger-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     box-shadow: inset 0 0 45px rgba(214, 48, 49, 0.9); pointer-events: none;
@@ -102,7 +144,6 @@
   .danger-pulse { animation: redPulse 0.4s infinite alternate; }
   @keyframes redPulse { from { opacity: 0.2; } to { opacity: 1; } }
 
-  /* 紧急伪装按钮 */
   #cover-btn-container {
     position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
     z-index: 30; display: none; flex-direction: column; align-items: center;
@@ -112,7 +153,7 @@
     border: none; padding: 14px 26px; border-radius: 50px; cursor: pointer;
     box-shadow: 0 6px 22px rgba(214,48,49,0.7); animation: btnShake 0.15s infinite;
   }
-  #countdown-ring { font-size: 12px; color: #d63031; font-weight: 900; background: #fff; padding: 3px 10px; border-radius: 10px; margin-top: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+  #countdown-ring { font-size: 12px; color: #d63031; font-weight: 900; background: #fff; padding: 3px 10px; border-radius: 10px; margin-top: 6px; }
   @keyframes btnShake { 0%{transform: scale(1);} 50%{transform: scale(1.08);} 100%{transform: scale(1);} }
 
   /* 底部操作面板 */
@@ -131,7 +172,7 @@
   .action-icon { font-size: 20px; }
   .action-risk { font-size: 9px; color: #e17055; }
 
-  /* 弹窗与结算 */
+  /* 弹窗与结算卡 */
   .modal-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.75); display: none; justify-content: center;
@@ -144,14 +185,14 @@
   @keyframes popIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   .modal-tag { display: inline-block; background: #ffeaa7; color: #d35400; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 10px; margin-bottom: 6px; }
   .modal-title { font-size: 17px; font-weight: 900; margin-bottom: 6px; color: #2d3436; }
-  .modal-desc { font-size: 12.5px; color: #636e72; margin-bottom: 14px; line-height: 1.4; text-align: left; background: #f1f2f6; padding: 10px; border-radius: 8px; }
+  .modal-desc { font-size: 12px; color: #636e72; margin-bottom: 12px; line-height: 1.4; text-align: left; background: #f1f2f6; padding: 10px; border-radius: 8px; }
   
   .event-btn {
-    width: 100%; background: #fff; color: #2d3436; border: 2px solid #b2bec3; padding: 10px 8px;
-    border-radius: 8px; font-size: 12px; font-weight: bold; margin-bottom: 8px; cursor: pointer;
-    text-align: left; display: flex; flex-direction: column; gap: 3px; transition: all 0.1s;
+    width: 100%; background: #fff; color: #2d3436; border: 2px solid #b2bec3; padding: 9px 8px;
+    border-radius: 8px; font-size: 12px; font-weight: bold; margin-bottom: 7px; cursor: pointer;
+    text-align: left; display: flex; flex-direction: column; gap: 2px;
   }
-  .event-btn:hover, .event-btn:active { border-color: #0984e3; background: #f0f7ff; }
+  .event-btn:active { border-color: #0984e3; background: #f0f7ff; }
   .event-btn-sub { font-size: 10px; color: #0984e3; font-weight: normal; }
 
   .choice-btn {
@@ -166,108 +207,153 @@
   .income-box { background: #ffeaa7; padding: 10px; border-radius: 8px; text-align: center; margin: 10px 0; }
   .income-val { font-size: 26px; font-weight: 900; color: #d63031; }
   .rank-badge { font-size: 32px; font-weight: 900; color: #e17055; text-align: center; margin: 2px 0; }
-  .title-tag { text-align: center; font-size: 13px; font-weight: bold; color: #636e72; margin-bottom: 10px; }
+  .title-tag { text-align: center; font-size: 13px; font-weight: bold; color: #636e72; margin-bottom: 8px; }
+
+  /* 道具工位养成弹窗 (Shop Modal) */
+  .shop-item-card {
+    background: #f8f9fa; border: 1.5px solid #dfe6e9; border-radius: 10px;
+    padding: 10px; display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px; text-align: left;
+  }
+  .item-title { font-size: 13px; font-weight: bold; color: #2d3436; }
+  .item-desc { font-size: 10px; color: #636e72; }
+  .buy-btn { background: #00b894; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; }
+  .buy-btn.owned { background: #b2bec3; cursor: default; }
 </style>
 </head>
 <body>
 
 <div id="game-container">
-  <div id="top-hud">
-    <div class="time-badge" id="game-clock">09:00</div>
-    <div style="font-size:12px;">目标: 报表 (<span style="color:#ffeaa7;">及格≥80%</span>)</div>
-    <div class="warning-badge" id="warning-box">警告: 0/3</div>
+  <!-- 关卡大厅视图 (Lobby View) -->
+  <div class="game-view view-active" id="lobby-view">
+    <div class="lobby-header">
+      <div class="lobby-title">《今天也不想上班》</div>
+      <div class="lobby-subtitle">职场摸鱼生存晋升之路 · 选择关卡</div>
+    </div>
+
+    <div class="gold-banner">
+      <span>💰 我的薪资存款: ¥<span id="player-total-gold">0.00</span></span>
+      <button class="buy-btn" style="background:#6c5ce7;" onclick="openShop()">🛋️ 工位改造</button>
+    </div>
+
+    <div id="level-list"></div>
   </div>
 
-  <div id="status-bars">
-    <div class="stat-item">
-      <div class="stat-label"><span>📊 工作进度</span><span id="work-num">0%</span></div>
-      <div class="progress-bg"><div class="progress-fill work-fill" id="work-bar"></div></div>
+  <!-- 游戏主舞台视图 (Play View) -->
+  <div class="game-view" id="play-view">
+    <div id="top-hud">
+      <button class="back-btn" onclick="backToLobby()">⬅ 放弃返回</button>
+      <div class="time-badge" id="game-clock">09:00</div>
+      <div style="font-size:12px;" id="hud-level-target">及格≥80%</div>
     </div>
-    <div class="stat-item">
-      <div class="stat-label"><span>👀 老板怀疑度</span><span id="suspicion-num">10%</span></div>
-      <div class="progress-bg"><div class="progress-fill suspicion-fill" id="suspicion-bar"></div></div>
+
+    <div id="status-bars">
+      <div class="stat-item">
+        <div class="stat-label"><span>📊 工作进度</span><span id="work-num">0%</span></div>
+        <div class="progress-bg"><div class="progress-fill work-fill" id="work-bar"></div></div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label"><span>👀 综合怀疑度</span><span id="suspicion-num">10%</span></div>
+        <div class="progress-bg"><div class="progress-fill suspicion-fill" id="suspicion-bar"></div></div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label"><span>⚡ 精神精力</span><span id="spirit-num">90%</span></div>
+        <div class="progress-bg"><div class="progress-fill spirit-fill" id="spirit-bar"></div></div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label"><span>🐟 摸鱼结余</span><span id="fish-num">¥0.0</span></div>
+        <div class="progress-bg"><div class="progress-fill fish-fill" id="fish-bar"></div></div>
+      </div>
     </div>
-    <div class="stat-item">
-      <div class="stat-label"><span>⚡ 精神精力</span><span id="spirit-num">90%</span></div>
-      <div class="progress-bg"><div class="progress-fill spirit-fill" id="spirit-bar"></div></div>
+
+    <div id="office-stage">
+      <div id="danger-overlay"></div>
+      <div id="boss-stare-banner">👀 领导正在身后监视! (禁止摸鱼)</div>
+      
+      <!-- 关卡3/5 特殊摄像头 -->
+      <div id="camera-device">📹 监控</div>
+      <div id="camera-light"></div>
+
+      <!-- 区域 -->
+      <div class="room-area" id="boss-room">🚪 老板室</div>
+      <div class="room-area" id="toilet-room">
+        <span>🚻 卫生间</span>
+        <span id="toilet-stay-time" style="font-size:10px; color:#d63031;"></span>
+      </div>
+      <div id="water-cooler">🚰</div>
+
+      <!-- 同事工位 -->
+      <div class="desk" id="desk-li">
+        <div style="font-size: 20px;">💻</div>
+        <div class="char-name" id="name-li">小李</div>
+      </div>
+      <div class="desk" id="desk-mei">
+        <div style="font-size: 20px;">🧋</div>
+        <div class="char-name">小美</div>
+      </div>
+
+      <!-- 玩家工位 -->
+      <div class="desk" id="player-desk">
+        <div id="status-bubble">打卡上班中</div>
+        <div id="player-avatar">👨‍💻</div>
+        <div class="char-name">我 (工位)</div>
+      </div>
+
+      <!-- 老板 1 (王总) -->
+      <div class="character" id="boss">
+        <div style="font-size: 24px;" id="boss-icon">👔</div>
+        <div class="char-name" id="boss-state-text" style="background:#e17055;">王总</div>
+      </div>
+
+      <!-- 老板 2 (关卡4/5 张总监) -->
+      <div class="character" id="boss2">
+        <div style="font-size: 24px;">🕶️</div>
+        <div class="char-name" id="boss2-state-text" style="background:#6c5ce7;">张总监</div>
+      </div>
+
+      <!-- 紧急伪装按钮 -->
+      <div id="cover-btn-container">
+        <button id="cover-btn" onclick="triggerDisguise()">🚨 疯狂切回工作!</button>
+        <div id="countdown-ring">剩余反应时间: <span id="react-timer">1.25</span>s</div>
+      </div>
     </div>
-    <div class="stat-item">
-      <div class="stat-label"><span>🐟 摸鱼结余</span><span id="fish-num">¥0.0</span></div>
-      <div class="progress-bg"><div class="progress-fill fish-fill" id="fish-bar"></div></div>
+
+    <!-- 底部操作面板 -->
+    <div id="action-panel">
+      <button class="action-btn" id="btn-work" onclick="setAction('work')">
+        <span class="action-icon">💼</span>
+        <span>认真工作</span>
+        <span class="action-risk">耗精神 | 达标必备</span>
+      </button>
+      <button class="action-btn" id="btn-phone" onclick="setAction('phone')">
+        <span class="action-icon">📱</span>
+        <span>刷手机</span>
+        <span class="action-risk">延迟0.4s | +摸鱼</span>
+      </button>
+      <button class="action-btn" id="btn-game" onclick="setAction('game')">
+        <span class="action-icon">🎮</span>
+        <span>偷偷打游戏</span>
+        <span class="action-risk">延迟1.0s | 高风险高收益</span>
+      </button>
+      <button class="action-btn" id="btn-toilet" onclick="setAction('toilet')">
+        <span class="action-icon">🚽</span>
+        <span>带薪拉屎</span>
+        <span class="action-risk">限时6s | 超时被抓</span>
+      </button>
+      <button class="action-btn" id="btn-coffee" onclick="useCoffee()">
+        <span class="action-icon">☕</span>
+        <span>喝咖啡 (<span id="coffee-left">2</span>)</span>
+        <span class="action-risk">秒回精神</span>
+      </button>
+      <button class="action-btn" id="btn-chat" onclick="setAction('chat')">
+        <span class="action-icon">💬</span>
+        <span>工位闲聊</span>
+        <span class="action-risk">延迟0.5s | 回精神</span>
+      </button>
     </div>
   </div>
 
-  <div id="office-stage">
-    <div id="danger-overlay"></div>
-    <div id="boss-stare-banner">👀 老板正在身后监视! (禁止摸鱼)</div>
-    <div id="meeting-banner">📋 全体开会中: 简单说两句... (<span id="meeting-min">10</span>m)</div>
-
-    <div class="room-area" id="boss-room">🚪 老板室</div>
-    <div class="room-area" id="toilet-room">
-      <span>🚻 卫生间</span>
-      <span id="toilet-stay-time" style="font-size:10px; color:#d63031;"></span>
-    </div>
-    <div id="water-cooler">🚰</div>
-
-    <div class="desk" id="desk-li">
-      <div style="font-size: 20px;">💻</div>
-      <div class="char-name">小李</div>
-    </div>
-    <div class="desk" id="desk-mei">
-      <div style="font-size: 20px;">🧋</div>
-      <div class="char-name">小美</div>
-    </div>
-
-    <div class="desk" id="player-desk">
-      <div id="status-bubble">打卡上班中</div>
-      <div id="player-avatar">👨‍💻</div>
-      <div class="char-name">我 (工位)</div>
-    </div>
-
-    <div class="character" id="boss">
-      <div style="font-size: 26px;" id="boss-icon">👔</div>
-      <div class="char-name" id="boss-state-text" style="background:#e17055;">王总</div>
-    </div>
-
-    <div id="cover-btn-container">
-      <button id="cover-btn" onclick="triggerDisguise()">🚨 疯狂切回工作!</button>
-      <div id="countdown-ring">剩余反应时间: <span id="react-timer">1.25</span>s</div>
-    </div>
-  </div>
-
-  <div id="action-panel">
-    <button class="action-btn" id="btn-work" onclick="setAction('work')">
-      <span class="action-icon">💼</span>
-      <span>认真工作</span>
-      <span class="action-risk">耗精神 | 达标必备</span>
-    </button>
-    <button class="action-btn" id="btn-phone" onclick="setAction('phone')">
-      <span class="action-icon">📱</span>
-      <span>刷手机</span>
-      <span class="action-risk">延迟0.4s | +摸鱼</span>
-    </button>
-    <button class="action-btn" id="btn-game" onclick="setAction('game')">
-      <span class="action-icon">🎮</span>
-      <span>偷偷打游戏</span>
-      <span class="action-risk">延迟1.0s | 高风险高收益</span>
-    </button>
-    <button class="action-btn" id="btn-toilet" onclick="setAction('toilet')">
-      <span class="action-icon">🚽</span>
-      <span>带薪拉屎</span>
-      <span class="action-risk">限时6秒 | 超时被敲门</span>
-    </button>
-    <button class="action-btn" id="btn-coffee" onclick="useCoffee()">
-      <span class="action-icon">☕</span>
-      <span>喝咖啡 (<span id="coffee-left">2</span>)</span>
-      <span class="action-risk">瞬间回+30精神</span>
-    </button>
-    <button class="action-btn" id="btn-chat" onclick="setAction('chat')">
-      <span class="action-icon">💬</span>
-      <span>工位闲聊</span>
-      <span class="action-risk">延迟0.5s | 回精神</span>
-    </button>
-  </div>
-
+  <!-- 突发事件弹窗 -->
   <div class="modal-overlay" id="event-modal">
     <div class="modal-card">
       <span class="modal-tag" id="event-tag">突发职场事件</span>
@@ -277,14 +363,16 @@
     </div>
   </div>
 
+  <!-- 技能三选一弹窗 -->
   <div class="modal-overlay" id="skill-modal">
     <div class="modal-card">
       <div class="modal-title">🎉 中午技能觉醒 (三选一)</div>
-      <div class="modal-desc">面对下午更频繁的巡逻，选择你的流派被动技能</div>
+      <div class="modal-desc">面对下半天更强烈的巡查，强化你的流派能力</div>
       <div id="skill-options"></div>
     </div>
   </div>
 
+  <!-- 结算弹窗 -->
   <div class="modal-overlay" id="result-modal">
     <div class="modal-card" id="settlement-card">
       <div class="modal-title" style="text-align: center;" id="settle-header">🏁 今日打工结算报告</div>
@@ -292,22 +380,31 @@
       <div class="title-tag" id="report-title">《公司最稳定的混子》</div>
       
       <div class="income-box">
-        <div style="font-size: 11px; color: #636e72;">今日实得带薪摸鱼收入</div>
+        <div style="font-size: 11px; color: #636e72;">本关实得带薪摸鱼收入</div>
         <div class="income-val" id="report-income">¥0.00</div>
       </div>
 
-      <div class="report-row"><span>工作进度 (需≥80%及格):</span><b id="rep-work">0%</b></div>
+      <div class="report-row"><span>工作完成度:</span><b id="rep-work">0%</b></div>
       <div class="report-row"><span>被抓现行次数:</span><b id="rep-caught" style="color:#d63031;">0次</b></div>
-      <div class="report-row"><span>累计罚款/没收:</span><b id="rep-penalty" style="color:#d63031;">-¥0.00</b></div>
-      <div class="report-row"><span>老板最终怀疑度:</span><b id="rep-suspicion">0%</b></div>
-      <div class="report-row"><span>解锁成就:</span><b id="rep-achieve" style="color:#6c5ce7;">暂无</b></div>
+      <div class="report-row"><span>累计罚款扣除:</span><b id="rep-penalty" style="color:#d63031;">-¥0.00</b></div>
 
-      <button class="choice-btn" style="margin-top: 14px; background:#00b894;" onclick="restartGame()">再来一局 (吸取教训)</button>
+      <button class="choice-btn" id="next-level-btn" style="margin-top: 14px; background:#00b894;" onclick="onSettlementConfirm()">返回关卡大厅</button>
+    </div>
+  </div>
+
+  <!-- 工位商城弹窗 (Shop Modal) -->
+  <div class="modal-overlay" id="shop-modal">
+    <div class="modal-card" style="text-align: left;">
+      <div class="modal-title" style="text-align: center;">🛋️ 工位装修改造</div>
+      <div class="modal-desc" style="text-align: center;">购买家具可获得永久全局属性加成</div>
+      <div id="shop-items-container"></div>
+      <button class="choice-btn" style="background:#636e72; margin-top:8px;" onclick="closeShop()">关闭商城</button>
     </div>
   </div>
 </div>
 
 <script>
+// --- 音效系统 ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function beep(freq, duration, type="sine") {
   try {
@@ -328,31 +425,112 @@ function playBusted() { beep(130, 0.45, 'sawtooth'); }
 function playFine() { beep(300, 0.1); setTimeout(()=>beep(200, 0.2), 120); }
 function playEventSound() { beep(440, 0.1); setTimeout(()=>beep(880, 0.2), 100); }
 
+// --- 5大关卡配置表 (进阶递增难度) ---
+const LEVELS = [
+  {
+    id: 1,
+    name: "第一关：试用期入职初体验",
+    difficulty: "★☆☆☆☆",
+    targetWork: 80,
+    bossSpeed: 0.038,
+    reactTime: 1.35,
+    hasCamera: false,
+    hasBoss2: false,
+    hasSnitch: false,
+    desc: "熟悉办公室基本环境。王总单独巡逻，移动速度平缓，及格线为 80% 工作量。"
+  },
+  {
+    id: 2,
+    name: "第二关：转正答辩 · 内卷同事登场",
+    difficulty: "★★☆☆☆",
+    targetWork: 85,
+    bossSpeed: 0.045,
+    reactTime: 1.15,
+    hasCamera: false,
+    hasBoss2: false,
+    hasSnitch: true, // 卷王小李会打小报告
+    desc: "同事小李开始内卷！如果你在他面前持续摸鱼，他会主动向王总打小报告提高怀疑度。"
+  },
+  {
+    id: 3,
+    name: "第三关：季度攻坚 · 云台摄像头上线",
+    difficulty: "★★★☆☆",
+    targetWork: 88,
+    bossSpeed: 0.05,
+    reactTime: 1.05,
+    hasCamera: true, // 墙上360度红外扫描
+    hasBoss2: false,
+    hasSnitch: true,
+    desc: "工位上方加装了 360° 红外监控摄像头！红光扫过工位时绝不能摸鱼，否则直接警告！"
+  },
+  {
+    id: 4,
+    name: "第四关：双管齐下 · 空降张总监",
+    difficulty: "★★★★☆",
+    targetWork: 90,
+    bossSpeed: 0.055,
+    reactTime: 0.95,
+    hasCamera: false,
+    hasBoss2: true, // 双 Boss 巡逻
+    hasSnitch: true,
+    desc: "严厉的张总监空降！两位领导在办公室交叉巡逻，回马枪与突袭概率大幅翻倍。"
+  },
+  {
+    id: 5,
+    name: "第五关：决战年终 · 终极全天候修罗场",
+    difficulty: "★★★★★",
+    targetWork: 95,
+    bossSpeed: 0.065,
+    reactTime: 0.85,
+    hasCamera: true, // 摄像头 + 双Boss + 内卷同事
+    hasBoss2: true,
+    hasSnitch: true,
+    desc: "极限考验！双 Boss + 云台监控 + 内卷同事全开，只有顶级摸鱼大师才能生存！"
+  }
+];
+
+// --- 家具商城配置 ---
+const SHOP_ITEMS = [
+  { id: 'chair', name: '🪑 人体工学电竞椅', price: 100, desc: '工作与摸鱼的精神消耗减少 20%', owned: false },
+  { id: 'film', name: '🖥️ 纳米级防窥膜', price: 150, desc: '被抓现行时的罚款与怀疑度增长减少 35%', owned: false },
+  { id: 'coffee_machine', name: '☕ 专属胶囊咖啡机', price: 200, desc: '开局自带咖啡数量 +2 杯', owned: false },
+  { id: 'keyboard', name: '⌨️ 机械静音键盘', price: 250, desc: '工作效率永久提升 +25%', owned: false }
+];
+
+// --- 全局持久化数据 ---
+let globalData = {
+  totalGold: 0,
+  unlockedLevel: 1,
+  levelScores: {}
+};
+
+// --- 当前关卡状态 ---
+let currentLevelIndex = 0;
+let currentLevelConfig = LEVELS[0];
+
 let state = {
   timeMinutes: 9 * 60,
   workProgress: 0,
-  suspicion: 12,
+  suspicion: 10,
   spirit: 90,
   fishIncome: 0,
   currentAction: 'idle',
   coffeeCount: 2,
-  warningCount: 0,
   caughtCount: 0,
   totalFined: 0,
   isPaused: false,
   gameOver: false,
+  
   toiletSecondsInRow: 0,
   maxSafeToiletSec: 6,
   isUnderStare: false,
   stareSecondsLeft: 0,
-  isInMeeting: false,
-  meetingMinutesPassed: 0,
-  achievements: [],
+
   reactionTime: 1.25,
   actionDelays: { work: 0.05, phone: 0.4, chat: 0.5, game: 1.0, toilet: 0 },
   antiPeekRate: 0,
   workEfficiencyBonus: 1.0,
-  milkTeaBuffTimer: 0,
+
   isUnderInspection: false,
   reactTimerLeft: 1.25,
   reactInterval: null,
@@ -370,70 +548,104 @@ const POSITIONS = {
 
 let bossPos = { top: 25, left: 45 };
 let bossTarget = POSITIONS.bossRoom;
+let boss2Pos = { top: 25, left: 200 };
+let boss2Target = POSITIONS.deskMei;
 
-const EVENT_POOL = [
-  {
-    triggerTime: 10 * 60 + 30,
-    tag: "📞 外部突发",
-    title: "客户夺命连环 Call",
-    desc: "甲方经理突然打来语音电话，要求同步上周遗留的报表细节，此时你正准备摸鱼……",
-    options: [
-      { text: "【立刻接听专业沟通】", sub: "工作进度 +16%, 精神 -22 (极耗精力但能赶工)", effect: (s)=>{ s.workProgress = Math.min(100, s.workProgress + 16); s.spirit = Math.max(0, s.spirit - 22); } },
-      { text: "【假装信号不好直接挂断】", sub: "精神 +10, 摸鱼 +¥10, 怀疑度 +15% (逃避虽爽但危险)", effect: (s)=>{ s.spirit = Math.min(100, s.spirit + 10); s.fishIncome += 10; s.suspicion = Math.min(100, s.suspicion + 15); } },
-      { text: "【转接给程序员小李】", sub: "怀疑度 -5%, 扣¥10请小李喝水 (成功甩锅)", effect: (s)=>{ s.suspicion = Math.max(0, s.suspicion - 5); s.fishIncome = Math.max(0, s.fishIncome - 10); } }
-    ]
-  },
-  {
-    triggerTime: 13 * 60 + 15,
-    tag: "🧋 办公室社交",
-    title: "小美发起奶茶拼单",
-    desc: "“下午困死了，一起点奶茶吗？还差一杯就免起送费了！”小美探过头来问你。",
-    options: [
-      { text: "【大杯全糖奶茶 (我请!)】", sub: "精神+35, 扣¥22, 获得30秒精神消耗减半Buff", effect: (s)=>{ s.spirit = Math.min(100, s.spirit + 35); s.fishIncome = Math.max(0, s.fishIncome - 22); s.milkTeaBuffTimer = 30; showFloatingText("获得奶茶续命Buff (消耗减半)"); } },
-      { text: "【在减肥，专心赶工】", sub: "工作进度 +8%, 怀疑度 -4%", effect: (s)=>{ s.workProgress = Math.min(100, s.workProgress + 8); s.suspicion = Math.max(0, s.suspicion - 4); } },
-      { text: "【帮王总也点一杯送进办公室】", sub: "扣¥35, 老板怀疑度 -25% (职场人情世故)", effect: (s)=>{ s.suspicion = Math.max(0, s.suspicion - 25); s.fishIncome = Math.max(0, s.fishIncome - 35); } }
-    ]
-  },
-  {
-    triggerTime: 14 * 60 + 40,
-    tag: "👥 领导临时召集",
-    title: "王总：简单开个10分钟会",
-    desc: "“大家去一号会议室，我就简单说两句，不耽误大家下班。”",
-    options: [
-      { text: "【乖乖带本子进会议室】", sub: "触发会议模拟: 无法操作但全额累积带薪摸鱼!", effect: (s)=>{ triggerMeetingEvent(); } }
-    ]
-  },
-  {
-    triggerTime: 16 * 60 + 15,
-    tag: "🖨️ 设备故障",
-    title: "公用打印机卡纸报警",
-    desc: "打印机发出刺耳响声，王总刚好往打印机走去，急需有人处理。",
-    options: [
-      { text: "【挺身而出假装修理】", sub: "名正言顺离开工位摸鱼 +¥25, 精神+15, 怀疑-10%", effect: (s)=>{ s.fishIncome += 25; s.spirit = Math.min(100, s.spirit + 15); s.suspicion = Math.max(0, s.suspicion - 10); showFloatingText("在打印机旁磨洋工成功!"); } },
-      { text: "【假装没听见继续敲键盘】", sub: "工作进度 +6%, 精神 -8", effect: (s)=>{ s.workProgress = Math.min(100, s.workProgress + 6); s.spirit = Math.max(0, s.spirit - 8); } },
-      { text: "【大喊让实习生去修】", sub: "怀疑度 +8% (显得不够热心)", effect: (s)=>{ s.suspicion = Math.min(100, s.suspicion + 8); } }
-    ]
-  },
-  {
-    triggerTime: 17 * 60 + 10,
-    tag: "🎮 最终诱惑",
-    title: "小李发来开黑邀请",
-    desc: "“兄弟，差一人五排，来一把？赢了直接下班！”小李在微信狂戳你。",
-    options: [
-      { text: "【生死看淡，直接上号！】", sub: "摸鱼瞬间 +¥55! (但若被抓直接扣¥100并大怒)", effect: (s)=>{ s.fishIncome += 55; s.suspicion = Math.min(100, s.suspicion + 10); showFloatingText("高风险五排中! 收益狂飙!"); } },
-      { text: "【拒绝诱惑，专心冲刺进度】", sub: "工作进度 +14%, 精神 -10 (稳妥保及格)", effect: (s)=>{ s.workProgress = Math.min(100, s.workProgress + 14); s.spirit = Math.max(0, s.spirit - 10); } },
-      { text: "【把手机架在屏幕前看小李打】", sub: "摸鱼 +¥20, 精神 +15, 无风险", effect: (s)=>{ s.fishIncome += 20; s.spirit = Math.min(100, s.spirit + 15); } }
-    ]
-  }
-];
+// --- 大厅渲染与关卡初始化 ---
+function renderLobby() {
+  document.getElementById('player-total-gold').innerText = globalData.totalGold.toFixed(2);
+  const container = document.getElementById('level-list');
+  container.innerHTML = '';
 
+  LEVELS.forEach((lvl, idx) => {
+    const isLocked = lvl.id > globalData.unlockedLevel;
+    const card = document.createElement('div');
+    card.className = `level-card ${isLocked ? 'locked' : ''}`;
+    card.innerHTML = `
+      <div class="level-header-row">
+        <span class="level-num">LEVEL 0${lvl.id}</span>
+        <span class="level-stars">${lvl.difficulty}</span>
+      </div>
+      <div class="level-name">${lvl.name}</div>
+      <div class="level-mechanic">目标及格线: ≥${lvl.targetWork}% 工作量 | 反应时限: ${lvl.reactTime}s</div>
+      <div class="level-desc">${isLocked ? '🔒 需通关前一关解锁' : lvl.desc}</div>
+    `;
+    if (!isLocked) {
+      card.onclick = () => startLevel(idx);
+    }
+    container.appendChild(card);
+  });
+}
+
+function startLevel(idx) {
+  currentLevelIndex = idx;
+  currentLevelConfig = LEVELS[idx];
+
+  // 切换视图
+  document.getElementById('lobby-view').classList.remove('view-active');
+  document.getElementById('play-view').classList.add('view-active');
+  document.getElementById('hud-level-target').innerText = `关卡0${currentLevelConfig.id} (及格≥${currentLevelConfig.targetWork}%)`;
+
+  // 特殊机制UI
+  document.getElementById('camera-device').style.display = currentLevelConfig.hasCamera ? 'flex' : 'none';
+  document.getElementById('camera-light').style.display = currentLevelConfig.hasCamera ? 'block' : 'none';
+  document.getElementById('boss2').style.display = currentLevelConfig.hasBoss2 ? 'flex' : 'none';
+  document.getElementById('name-li').innerText = currentLevelConfig.hasSnitch ? '小李(卷王)' : '小李';
+
+  // 应用家具属性
+  let extraCoffee = SHOP_ITEMS.find(i=>i.id==='coffee_machine').owned ? 2 : 0;
+  let antiPeek = SHOP_ITEMS.find(i=>i.id==='film').owned ? 0.35 : 0;
+  let workEff = SHOP_ITEMS.find(i=>i.id==='keyboard').owned ? 1.25 : 1.0;
+
+  // 重置关卡状态
+  state = {
+    timeMinutes: 9 * 60,
+    workProgress: 0,
+    suspicion: 10,
+    spirit: 90,
+    fishIncome: 0,
+    currentAction: 'idle',
+    coffeeCount: 2 + extraCoffee,
+    caughtCount: 0,
+    totalFined: 0,
+    isPaused: false,
+    gameOver: false,
+    toiletSecondsInRow: 0,
+    maxSafeToiletSec: 6,
+    isUnderStare: false,
+    stareSecondsLeft: 0,
+    reactionTime: currentLevelConfig.reactTime,
+    actionDelays: { work: 0.05, phone: 0.4, chat: 0.5, game: 1.0, toilet: 0 },
+    antiPeekRate: antiPeek,
+    workEfficiencyBonus: workEff,
+    isUnderInspection: false,
+    reactTimerLeft: currentLevelConfig.reactTime,
+    reactInterval: null,
+    turnBackTriggered: false
+  };
+
+  document.getElementById('coffee-left').innerText = state.coffeeCount;
+  setAction('idle');
+  updateUI();
+}
+
+function backToLobby() {
+  state.gameOver = true;
+  document.getElementById('play-view').classList.remove('view-active');
+  document.getElementById('lobby-view').classList.add('view-active');
+  renderLobby();
+}
+
+// --- 行为切换 ---
 function setAction(action) {
-  if (state.gameOver || state.isPaused || state.isInMeeting) return;
+  if (state.gameOver || state.isPaused) return;
+
   if (state.isUnderStare && action !== 'work') {
-    showFloatingText('❌ 老板在盯着你! 无法摸鱼!');
+    showFloatingText('❌ 领导正在身后盯着你! 无法摸鱼!');
     beep(200, 0.1);
     return;
   }
+  
   if (action === 'toilet') {
     document.getElementById('player-avatar').style.display = 'none';
     document.getElementById('status-bubble').innerText = '🚽 厕所避难中';
@@ -458,7 +670,7 @@ function setAction(action) {
 }
 
 function useCoffee() {
-  if (state.coffeeCount > 0 && !state.isInMeeting) {
+  if (state.coffeeCount > 0) {
     state.coffeeCount--;
     state.spirit = Math.min(100, state.spirit + 30);
     document.getElementById('coffee-left').innerText = state.coffeeCount;
@@ -467,8 +679,8 @@ function useCoffee() {
   }
 }
 
-function startBossInspection() {
-  if (state.isInMeeting) return;
+// --- 检查与伪装 ---
+function startBossInspection(bossName="领导") {
   if (state.currentAction === 'toilet') {
     if (state.toiletSecondsInRow > state.maxSafeToiletSec) {
       handleToiletBusted();
@@ -490,9 +702,10 @@ function startBossInspection() {
     state.reactTimerLeft -= intervalMs / 1000;
     if (Math.random() < 0.3) playHeartbeat();
     document.getElementById('react-timer').innerText = Math.max(0, state.reactTimerLeft).toFixed(2);
+
     if (state.reactTimerLeft <= 0) {
       clearInterval(state.reactInterval);
-      handleInspectionFail("反应超时! 被当场抓获!");
+      handleInspectionFail(`反应超时! 被${bossName}当场抓获!`);
     }
   }, intervalMs);
 }
@@ -510,7 +723,7 @@ function triggerDisguise() {
     state.suspicion = Math.max(0, state.suspicion - 4);
     state.fishIncome += 3.0;
     playSuccess();
-    showFloatingText('✨ 险象环生! 成功切回Excel (怀疑-4%)');
+    showFloatingText('✨ 险象环生! 成功切回工作 (怀疑-4%)');
   } else {
     handleInspectionFail(`收手太慢! (${state.currentAction === 'game' ? '游戏没关掉' : '手机被看到了'})`);
   }
@@ -528,22 +741,22 @@ function handleInspectionFail(reason) {
   state.fishIncome = Math.max(0, state.fishIncome - penaltyMoney);
   state.totalFined += penaltyMoney;
 
-  let suspGain = (30 * (1 - state.antiPeekRate));
+  let suspGain = (32 * (1 - state.antiPeekRate));
   state.suspicion = Math.min(100, state.suspicion + suspGain);
 
   triggerBossStare(4);
   showFloatingText(`🚨 ${reason} 没收¥${penaltyMoney.toFixed(1)} 怀疑+${Math.round(suspGain)}%`);
   playFine();
 
-  if (state.suspicion >= 100) triggerGameOver("你被开除了！(老板怀疑度突破 100%，人事约谈)");
+  if (state.suspicion >= 100) triggerGameOver("你被开除了！(怀疑度突破 100%，被劝退)");
 }
 
 function handleToiletBusted() {
   playBusted();
-  state.suspicion = Math.min(100, state.suspicion + 20);
-  state.fishIncome = Math.max(0, state.fishIncome - 25);
-  state.totalFined += 25;
-  showFloatingText('🚪 王总猛敲厕所门: "掉坑里了?!" 怀疑+20% 罚款¥25');
+  state.suspicion = Math.min(100, state.suspicion + 25);
+  state.fishIncome = Math.max(0, state.fishIncome - 30);
+  state.totalFined += 30;
+  showFloatingText('🚪 猛敲厕所门: "蹲这么久?!" 怀疑+25% 罚款¥30');
   setAction('work');
   triggerBossStare(3);
 }
@@ -567,41 +780,7 @@ function triggerBossStare(seconds) {
       ['phone','game','toilet','chat'].forEach(act => {
         document.getElementById(`btn-${act}`).classList.remove('disabled');
       });
-      showFloatingText('老板终于走开了...');
-    }
-  }, 1000);
-}
-
-function triggerMeetingEvent() {
-  state.isInMeeting = true;
-  document.getElementById('meeting-banner').style.display = 'block';
-  document.getElementById('player-avatar').innerText = '😴';
-  document.getElementById('status-bubble').innerText = '📋 会议中 (假装在听)';
-  
-  ['work','phone','game','toilet','coffee','chat'].forEach(act => {
-    document.getElementById(`btn-${act}`).classList.add('disabled');
-  });
-
-  let meetingTimes = [10, 20, 35, 47];
-  let step = 0;
-  let meetingInterval = setInterval(() => {
-    step++;
-    if (step < meetingTimes.length) {
-      document.getElementById('meeting-min').innerText = meetingTimes[step];
-      state.fishIncome += 10;
-      beep(350, 0.08);
-    } else {
-      clearInterval(meetingInterval);
-      state.isInMeeting = false;
-      document.getElementById('meeting-banner').style.display = 'none';
-      ['work','phone','game','toilet','coffee','chat'].forEach(act => {
-        document.getElementById(`btn-${act}`).classList.remove('disabled');
-      });
-      state.fishIncome += 15;
-      state.spirit = Math.min(100, state.spirit + 15);
-      state.achievements.push("《简单说两句》(开会47分钟)");
-      showFloatingText("🎉 会议结束! 带薪摸鱼累计+¥45, 解锁成就!");
-      setAction('work');
+      showFloatingText('领导终于走开了...');
     }
   }, 1000);
 }
@@ -611,31 +790,30 @@ function showFloatingText(txt) {
   bubble.innerText = txt;
 }
 
+// --- 老板 AI (支持双Boss) ---
 function updateBossAI() {
-  if (state.isInMeeting) return;
   const bossEl = document.getElementById('boss');
-  let isAfternoonRush = state.timeMinutes >= 15 * 60;
-  let speed = isAfternoonRush ? 0.055 : 0.038;
+  let speed = currentLevelConfig.bossSpeed;
   if (state.suspicion > 60) speed += 0.015;
 
+  // Boss 1 移动
   bossPos.top += (bossTarget.top - bossPos.top) * speed;
   bossPos.left += (bossTarget.left - bossPos.left) * speed;
   bossEl.style.top = bossPos.top + 'px';
   bossEl.style.left = bossPos.left + 'px';
 
   let distToPlayer = Math.hypot(bossPos.top - POSITIONS.playerDesk.top, bossPos.left - POSITIONS.playerDesk.left);
-  
   if (distToPlayer < 65 && !state.isUnderInspection && !state.isUnderStare && bossTarget === POSITIONS.playerDesk) {
-    startBossInspection();
+    startBossInspection("王总");
     setTimeout(() => {
       let turnBackChance = state.suspicion > 50 ? 0.65 : 0.35;
       if (!state.turnBackTriggered && Math.random() < turnBackChance) {
         state.turnBackTriggered = true;
         bossTarget = POSITIONS.water;
         setTimeout(() => {
-          showFloatingText('王总突然折返!(回马枪突袭)');
+          showFloatingText('王总突然折返!(回马枪)');
           bossTarget = POSITIONS.playerDesk;
-        }, 1600);
+        }, 1500);
       } else {
         state.turnBackTriggered = false;
         const spots = [POSITIONS.bossRoom, POSITIONS.deskLi, POSITIONS.deskMei, POSITIONS.water];
@@ -651,17 +829,42 @@ function updateBossAI() {
       if (Math.random() < inspectProb) {
         bossTarget = POSITIONS.playerDesk;
         document.getElementById('boss-state-text').innerText = '盯梢中👀';
-        document.getElementById('boss-icon').innerText = '🧐';
       } else {
         const spots = [POSITIONS.bossRoom, POSITIONS.deskLi, POSITIONS.deskMei, POSITIONS.water];
         bossTarget = spots[Math.floor(Math.random() * spots.length)];
         document.getElementById('boss-state-text').innerText = '巡逻中';
-        document.getElementById('boss-icon').innerText = '👔';
       }
     }, 1200);
   }
+
+  // Boss 2 移动 (如果存在)
+  if (currentLevelConfig.hasBoss2) {
+    const boss2El = document.getElementById('boss2');
+    boss2Pos.top += (boss2Target.top - boss2Pos.top) * (speed * 0.9);
+    boss2Pos.left += (boss2Target.left - boss2Pos.left) * (speed * 0.9);
+    boss2El.style.top = boss2Pos.top + 'px';
+    boss2El.style.left = boss2Pos.left + 'px';
+
+    let dist2ToPlayer = Math.hypot(boss2Pos.top - POSITIONS.playerDesk.top, boss2Pos.left - POSITIONS.playerDesk.left);
+    if (dist2ToPlayer < 65 && !state.isUnderInspection && !state.isUnderStare && boss2Target === POSITIONS.playerDesk) {
+      startBossInspection("张总监");
+      setTimeout(() => {
+        const spots = [POSITIONS.deskLi, POSITIONS.deskMei, POSITIONS.toilet];
+        boss2Target = spots[Math.floor(Math.random() * spots.length)];
+      }, 1800);
+    }
+
+    let dist2ToTarget = Math.hypot(boss2Pos.top - boss2Target.top, boss2Pos.left - boss2Target.left);
+    if (dist2ToTarget < 10 && boss2Target !== POSITIONS.playerDesk) {
+      setTimeout(() => {
+        if (Math.random() < 0.45) boss2Target = POSITIONS.playerDesk;
+        else boss2Target = [POSITIONS.deskLi, POSITIONS.deskMei, POSITIONS.toilet][Math.floor(Math.random()*3)];
+      }, 1000);
+    }
+  }
 }
 
+// --- 游戏主循环 ---
 let gameLoopInterval = setInterval(() => {
   if (state.isPaused || state.gameOver) return;
 
@@ -670,13 +873,13 @@ let gameLoopInterval = setInterval(() => {
   let m = state.timeMinutes % 60;
   document.getElementById('game-clock').innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 
-  if (state.milkTeaBuffTimer > 0) state.milkTeaBuffTimer -= 0.1;
+  // 减耗椅子家具
+  let chairBonus = SHOP_ITEMS.find(i=>i.id==='chair').owned ? 0.8 : 1.0;
 
   if (state.currentAction === 'work') {
     let eff = (state.spirit > 25 ? 0.62 : 0.22) * state.workEfficiencyBonus;
     state.workProgress = Math.min(100, state.workProgress + eff);
-    let drain = state.milkTeaBuffTimer > 0 ? 0.18 : 0.35;
-    state.spirit = Math.max(0, state.spirit - drain);
+    state.spirit = Math.max(0, state.spirit - 0.35 * chairBonus);
     state.suspicion = Math.max(0, state.suspicion - 0.06);
   } else if (state.currentAction === 'phone') {
     state.spirit = Math.min(100, state.spirit + 0.28);
@@ -699,18 +902,16 @@ let gameLoopInterval = setInterval(() => {
     state.fishIncome += 0.5;
   }
 
-  if (state.timeMinutes === 12 * 60) triggerSkillPick();
-
-  EVENT_POOL.forEach(ev => {
-    if (state.timeMinutes === ev.triggerTime) triggerCustomEvent(ev);
-  });
-
-  if (state.timeMinutes === 16 * 60 + 30 && state.workProgress < 50) {
-    showFloatingText('⚠️ 老板大吼: "销售报表怎么还没过半?!" 怀疑度+25%');
-    state.suspicion = Math.min(100, state.suspicion + 25);
-    playBusted();
+  // 关卡2/4/5 内卷同事机制：在摸鱼时概率被告密
+  if (currentLevelConfig.hasSnitch && (state.currentAction === 'game' || state.currentAction === 'phone')) {
+    if (Math.random() < 0.02) {
+      state.suspicion = Math.min(100, state.suspicion + 6);
+      showFloatingText('👀 卷王小李斜眼瞄你，向老板告密中(怀疑+6%)');
+      beep(250, 0.08);
+    }
   }
 
+  if (state.timeMinutes === 12 * 60) triggerSkillPick();
   if (state.timeMinutes >= 18 * 60) triggerSettlement();
 
   updateBossAI();
@@ -728,49 +929,23 @@ function updateUI() {
   document.getElementById('fish-num').innerText = '¥' + state.fishIncome.toFixed(1);
 }
 
-function triggerCustomEvent(ev) {
-  state.isPaused = true;
-  playEventSound();
-  const modal = document.getElementById('event-modal');
-  document.getElementById('event-tag').innerText = ev.tag;
-  document.getElementById('event-title').innerText = ev.title;
-  document.getElementById('event-desc').innerText = ev.desc;
-
-  const opts = document.getElementById('event-options');
-  opts.innerHTML = '';
-  ev.options.forEach((opt, idx) => {
-    const btn = document.createElement('button');
-    btn.className = 'event-btn';
-    btn.innerHTML = `<span>${opt.text}</span><span class="event-btn-sub">${opt.sub}</span>`;
-    btn.onclick = () => {
-      opt.effect(state);
-      modal.style.display = 'none';
-      state.isPaused = false;
-      updateUI();
-    };
-    opts.appendChild(btn);
-  });
-
-  modal.style.display = 'flex';
-}
-
 function triggerSkillPick() {
   state.isPaused = true;
   playEventSound();
   const modal = document.getElementById('skill-modal');
   const opts = document.getElementById('skill-options');
   opts.innerHTML = `
-    <button class="choice-btn" onclick="resolveSkill(1)">⌨️ 熟练 ALT+TAB (反应时间提升至 1.65s)</button>
-    <button class="choice-btn" onclick="resolveSkill(2)">🚀 Deadline爆肝 (工作效率 +25%)</button>
-    <button class="choice-btn" onclick="resolveSkill(3)">🛡️ 防窥膜 (被抓罚款与怀疑度增长 -40%)</button>
+    <button class="choice-btn" onclick="resolveSkill(1)">⌨️ 熟练 ALT+TAB (反应时间 +0.35s)</button>
+    <button class="choice-btn" onclick="resolveSkill(2)">🚀 Deadline冲刺 (工作效率 +30%)</button>
+    <button class="choice-btn" onclick="resolveSkill(3)">🛡️ 影帝级演技 (被抓罚款再减 30%)</button>
   `;
   modal.style.display = 'flex';
 }
 
 function resolveSkill(choice) {
-  if (choice === 1) { state.reactionTime = 1.65; showFloatingText('技能生效: 反应时间提升至1.65s'); }
-  else if (choice === 2) { state.workEfficiencyBonus = 1.25; showFloatingText('技能生效: 工作效率大幅提升!'); }
-  else if (choice === 3) { state.antiPeekRate = 0.4; showFloatingText('技能生效: 防窥膜保护'); }
+  if (choice === 1) { state.reactionTime += 0.35; showFloatingText('反应时间增加!'); }
+  else if (choice === 2) { state.workEfficiencyBonus += 0.3; showFloatingText('工作效率大幅提升!'); }
+  else if (choice === 3) { state.antiPeekRate = Math.min(0.8, state.antiPeekRate + 0.3); showFloatingText('被抓减免提升!'); }
   document.getElementById('skill-modal').style.display = 'none';
   state.isPaused = false;
 }
@@ -778,48 +953,100 @@ function resolveSkill(choice) {
 function triggerSettlement() {
   state.gameOver = true;
   const modal = document.getElementById('result-modal');
+  let passWork = currentLevelConfig.targetWork;
+
+  let isPass = state.workProgress >= passWork;
   let rank = 'C';
   let title = '《真实打工人》';
 
-  if (state.workProgress < 80) {
-    rank = 'D (不及格)';
-    title = '《绩效不达标·扣除全奖金》';
+  if (!isPass) {
+    rank = 'D (未达标)';
+    title = `《绩效不达标·未达到${passWork}%》`;
     state.fishIncome = 0;
-    document.getElementById('settle-header').innerText = '❌ 工作未达标 (绩效警告+1)';
-  } else if (state.workProgress >= 100) {
-    if (state.fishIncome >= 140 && state.caughtCount === 0) {
-      rank = 'SSS'; title = '《老板眼皮底下的神》';
-    } else if (state.fishIncome >= 90) {
-      rank = 'SS'; title = '《公司最稳定的混子》';
-    } else {
-      rank = 'S'; title = '《带薪摸鱼熟练工》';
-    }
+    document.getElementById('settle-header').innerText = '❌ 挑战失败 (未及格)';
+    document.getElementById('next-level-btn').innerText = '重试本关';
   } else {
-    rank = 'A'; title = '《勉强交差的摸鱼客》';
-    state.fishIncome *= 0.7;
+    document.getElementById('settle-header').innerText = '🎉 关卡挑战成功!';
+    document.getElementById('next-level-btn').innerText = '领取收益并返回大厅';
+    
+    // 解锁下一关
+    if (currentLevelConfig.id === globalData.unlockedLevel && globalData.unlockedLevel < LEVELS.length) {
+      globalData.unlockedLevel++;
+    }
+    globalData.totalGold += state.fishIncome;
+
+    if (state.workProgress >= 100 && state.caughtCount === 0) { rank = 'SSS'; title = '《老板眼皮底下的神》'; }
+    else if (state.fishIncome >= 80) { rank = 'SS'; title = '《公司最稳定的混子》'; }
+    else { rank = 'S'; title = '《带薪摸鱼熟练工》'; }
   }
 
   document.getElementById('report-rank').innerText = rank;
   document.getElementById('report-title').innerText = title;
   document.getElementById('report-income').innerText = '¥' + state.fishIncome.toFixed(2);
-  document.getElementById('rep-work').innerText = Math.round(state.workProgress) + '%';
+  document.getElementById('rep-work').innerText = `${Math.round(state.workProgress)}% (目标: ≥${passWork}%)`;
   document.getElementById('rep-caught').innerText = state.caughtCount + ' 次';
   document.getElementById('rep-penalty').innerText = '-¥' + state.totalFined.toFixed(1);
-  document.getElementById('rep-suspicion').innerText = Math.round(state.suspicion) + '%';
-  document.getElementById('rep-achieve').innerText = state.achievements.length > 0 ? state.achievements.join(", ") : "无";
 
   modal.style.display = 'flex';
+}
+
+function onSettlementConfirm() {
+  document.getElementById('result-modal').style.display = 'none';
+  backToLobby();
 }
 
 function triggerGameOver(reason) {
   state.gameOver = true;
   alert(reason);
-  location.reload();
+  backToLobby();
 }
 
-function restartGame() {
-  location.reload();
+// --- 工位商城系统 ---
+function openShop() {
+  const modal = document.getElementById('shop-modal');
+  const container = document.getElementById('shop-items-container');
+  container.innerHTML = '';
+
+  SHOP_ITEMS.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'shop-item-card';
+    card.innerHTML = `
+      <div>
+        <div class="item-title">${item.name}</div>
+        <div class="item-desc">${item.desc}</div>
+      </div>
+      <div>
+        <button class="buy-btn ${item.owned ? 'owned' : ''}" onclick="buyShopItem('${item.id}')">
+          ${item.owned ? '已拥有' : '¥' + item.price}
+        </button>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+
+  modal.style.display = 'flex';
 }
+
+function closeShop() {
+  document.getElementById('shop-modal').style.display = 'none';
+  renderLobby();
+}
+
+function buyShopItem(id) {
+  const item = SHOP_ITEMS.find(i => i.id === id);
+  if (item.owned) return;
+  if (globalData.totalGold >= item.price) {
+    globalData.totalGold -= item.price;
+    item.owned = true;
+    playSuccess();
+    openShop();
+  } else {
+    alert("薪资存款不足！多通关几局摸鱼攒钱吧！");
+  }
+}
+
+// 初始化
+renderLobby();
 </script>
 </body>
 </html>
