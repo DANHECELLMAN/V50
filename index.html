@@ -1,110 +1,584 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>微信支付：确认收款</title>
-    <style>
-        body { margin: 0; background-color: #ededed; font-family: -apple-system, sans-serif; }
-        .kfc-prank-wrapper { display: flex; justify-content: center; align-items: center; height: 100vh; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>《今天也不想上班》- 带薪摸鱼模拟器 Demo V0.1</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
+  body { background: #1a1a24; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; color: #333; }
+  #game-container {
+    width: 100vw; max-width: 420px; height: 100vh; max-height: 840px;
+    background: #f5f6fa; display: flex; flex-direction: column; position: relative;
+    overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.5); border-radius: 12px;
+  }
+  #top-hud {
+    background: #2d3436; color: #fff; padding: 8px 12px; display: flex;
+    justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold;
+    z-index: 10;
+  }
+  .time-badge { background: #00cec9; color: #2d3436; padding: 3px 8px; border-radius: 6px; font-size: 14px; }
+  #status-bars {
+    background: #dfe6e9; padding: 8px 12px; display: grid; grid-template-columns: 1fr 1fr;
+    gap: 6px; font-size: 11px; z-index: 10; border-bottom: 2px solid #b2bec3;
+  }
+  .stat-item { display: flex; flex-direction: column; gap: 2px; }
+  .stat-label { display: flex; justify-content: space-between; font-weight: bold; }
+  .progress-bg { height: 10px; background: #b2bec3; border-radius: 5px; overflow: hidden; }
+  .progress-fill { height: 100%; width: 0%; transition: width 0.2s ease; border-radius: 5px; }
+  .work-fill { background: #0984e3; }
+  .suspicion-fill { background: #d63031; }
+  .spirit-fill { background: #00b894; }
+  .fish-fill { background: #fdcb6e; }
 
-        /* --- 诱饵层：仿微信转账卡片 --- */
-        .transfer-card {
-            width: 85%; max-width: 320px;
-            background: #fa9d3b; /* 微信经典转账橙 */
-            border-radius: 10px;
-            padding: 25px 20px;
-            text-align: center;
-            color: white;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-        .transfer-card:active { transform: scale(0.98); }
-        
-        .icon-box {
-            width: 55px; height: 55px; background: #fff; border-radius: 50%;
-            margin: 0 auto 15px; display: flex; align-items: center; justify-content: center;
-            color: #fa9d3b; font-size: 28px; font-weight: bold;
-        }
+  #office-stage {
+    flex: 1; position: relative; background: #e8eaed; overflow: hidden;
+    background-image: radial-gradient(#dcdde1 15%, transparent 16%);
+    background-size: 20px 20px;
+  }
+  .room-area {
+    position: absolute; border: 2px dashed #b2bec3; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: #7f8c8d; font-weight: bold;
+  }
+  #boss-room { top: 10px; left: 10px; width: 100px; height: 70px; background: #ffeaa7; border-color: #fdcb6e; color: #d35400; }
+  #toilet-room { top: 10px; right: 10px; width: 80px; height: 70px; background: #81ecec; border-color: #00cec9; color: #0097e6; }
+  #water-cooler { top: 110px; left: 20px; width: 40px; height: 50px; background: #74b9ff; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
 
-        .transfer-title { font-size: 15px; opacity: 0.9; margin-bottom: 8px; }
-        .transfer-amount { font-size: 38px; font-weight: 500; margin-bottom: 25px; }
-        .btn-receive {
-            background: #fff; color: #fa9d3b; border: none; width: 100%;
-            padding: 12px 0; border-radius: 4px; font-size: 16px; font-weight: bold;
-        }
+  .desk {
+    position: absolute; width: 85px; height: 60px; background: #fff;
+    border: 2px solid #636e72; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  #player-desk { bottom: 30px; left: 50%; transform: translateX(-50%); width: 110px; height: 75px; border-color: #0984e3; border-width: 3px; background: #f1f2f6; }
+  #desk-li { bottom: 130px; left: 25px; }
+  #desk-mei { bottom: 130px; right: 25px; }
 
-        /* --- 真相层：疯四弹窗 --- */
-        .prank-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
-            opacity: 0; visibility: hidden; transition: 0.3s; z-index: 100;
-        }
-        .prank-overlay.active { opacity: 1; visibility: visible; }
+  .character {
+    position: absolute; width: 42px; height: 42px; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-size: 22px; transition: all 0.3s ease; z-index: 5;
+  }
+  .char-name { font-size: 10px; font-weight: bold; background: rgba(0,0,0,0.6); color: #fff; padding: 1px 4px; border-radius: 4px; margin-top: -4px; }
+  
+  #boss { top: 25px; left: 40px; background: #e17055; box-shadow: 0 0 10px rgba(225,112,85,0.5); }
+  #player-avatar { position: absolute; top: -20px; font-size: 32px; }
+  #status-bubble {
+    position: absolute; top: -45px; background: #fff; border: 1.5px solid #2d3436;
+    padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;
+    white-space: nowrap; box-shadow: 0 2px 5px rgba(0,0,0,0.15); animation: bounce 1s infinite alternate;
+  }
+  @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-3px); } }
 
-        .kfc-modal {
-            background: #fff; width: 80%; max-width: 350px;
-            padding: 30px; border-radius: 15px; text-align: center;
-            transform: translateY(20px); transition: 0.3s;
-        }
-        .active .kfc-modal { transform: translateY(0); }
+  #danger-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    box-shadow: inset 0 0 40px rgba(214, 48, 49, 0.8); pointer-events: none;
+    opacity: 0; transition: opacity 0.2s ease; z-index: 20;
+  }
+  .danger-pulse { animation: redPulse 0.5s infinite alternate; }
+  @keyframes redPulse { from { opacity: 0.3; } to { opacity: 1; } }
 
-        .kfc-logo { font-size: 60px; display: block; margin-bottom: 10px; animation: bounce 1s infinite; }
-        .kfc-title { color: #e4002b; font-size: 22px; font-weight: bold; margin-bottom: 15px; }
-        .kfc-desc { color: #444; font-size: 15px; line-height: 1.6; text-align: left; background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+  #cover-btn-container {
+    position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 30; display: none; flex-direction: column; align-items: center;
+  }
+  #cover-btn {
+    background: #d63031; color: #fff; font-size: 20px; font-weight: 900;
+    border: none; padding: 14px 28px; border-radius: 50px; cursor: pointer;
+    box-shadow: 0 6px 20px rgba(214,48,49,0.6); animation: btnShake 0.2s infinite;
+  }
+  #countdown-ring { font-size: 13px; color: #d63031; font-weight: bold; background: #fff; padding: 3px 10px; border-radius: 10px; margin-top: 6px; }
+  @keyframes btnShake { 0%{transform: scale(1);} 50%{transform: scale(1.08);} 100%{transform: scale(1);} }
 
-        .copy-btn {
-            background: #e4002b; color: white; border: none; width: 100%;
-            padding: 12px 0; border-radius: 25px; font-size: 15px; font-weight: bold;
-        }
-        .close-hint { margin-top: 15px; font-size: 13px; color: #999; }
+  #action-panel {
+    background: #fff; padding: 10px; border-top: 2px solid #dfe6e9;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; z-index: 10;
+  }
+  .action-btn {
+    background: #f8f9fa; border: 2px solid #b2bec3; border-radius: 8px;
+    padding: 10px 4px; display: flex; flex-direction: column; align-items: center;
+    gap: 3px; cursor: pointer; transition: all 0.1s; font-size: 12px; font-weight: bold;
+  }
+  .action-btn:active { transform: scale(0.95); }
+  .action-btn.active { border-color: #0984e3; background: #e1f5fe; box-shadow: 0 0 8px rgba(9,132,227,0.4); }
+  .action-icon { font-size: 20px; }
+  .action-risk { font-size: 9px; color: #e17055; }
 
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
-        }
-    </style>
+  .modal-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7); display: none; justify-content: center;
+    align-items: center; z-index: 100; padding: 20px;
+  }
+  .modal-card {
+    background: #fff; width: 100%; border-radius: 16px; padding: 20px;
+    text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.3); animation: popIn 0.3s ease;
+  }
+  @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .modal-title { font-size: 18px; font-weight: bold; margin-bottom: 10px; color: #2d3436; }
+  .modal-desc { font-size: 13px; color: #636e72; margin-bottom: 16px; line-height: 1.4; }
+  .choice-btn {
+    width: 100%; background: #0984e3; color: #fff; border: none; padding: 12px;
+    border-radius: 8px; font-size: 14px; font-weight: bold; margin-bottom: 8px; cursor: pointer;
+  }
+  .choice-btn:nth-child(2) { background: #00b894; }
+  .choice-btn:nth-child(3) { background: #6c5ce7; }
+
+  #settlement-card {
+    background: #fffdf9; border: 2px solid #fdcb6e; border-radius: 16px;
+    padding: 16px; text-align: left;
+  }
+  .report-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px dashed #dfe6e9; }
+  .income-box { background: #ffeaa7; padding: 12px; border-radius: 8px; text-align: center; margin: 12px 0; }
+  .income-val { font-size: 26px; font-weight: 900; color: #d63031; }
+  .rank-badge { font-size: 32px; font-weight: 900; color: #e17055; text-align: center; margin: 4px 0; }
+  .title-tag { text-align: center; font-size: 13px; font-weight: bold; color: #636e72; margin-bottom: 12px; }
+</style>
 </head>
 <body>
 
-<div class="kfc-prank-wrapper">
-    <div class="transfer-card" onclick="triggerPrank()">
-        <div class="icon-box">¥</div>
-        <div class="transfer-title">待收款金额</div>
-        <div class="transfer-amount">50.00</div>
-        <button class="btn-receive">确认收款</button>
-    </div>
-</div>
+<div id="game-container">
+  <div id="top-hud">
+    <div class="time-badge" id="game-clock">09:00</div>
+    <div>今日目标: 销售报表</div>
+    <div>金币: 💰<span id="gold-count">0</span></div>
+  </div>
 
-<div id="prankOverlay" class="prank-overlay">
-    <div class="kfc-modal">
-        <span class="kfc-logo">🍗</span>
-        <h2 class="kfc-title">提醒：收款失败</h2>
-        <div class="kfc-desc" id="kfcText">
-            系统检测到当前环境符合《肯德基法典》第51条：凡周四点击收款者，视为自愿请客。
-            <br><br>
-            <strong>今日任务：</strong>V我50，聆听我的炸鸡梦想。别看代码了，快去下单。
-        </div>
-        <button class="copy-btn" onclick="copyPrank()">复制文案 反击好友</button>
-        <div class="close-hint" onclick="closePrank()">点错了，我是穷鬼</div>
+  <div id="status-bars">
+    <div class="stat-item">
+      <div class="stat-label"><span>📊 工作进度</span><span id="work-num">0%</span></div>
+      <div class="progress-bg"><div class="progress-fill work-fill" id="work-bar"></div></div>
     </div>
+    <div class="stat-item">
+      <div class="stat-label"><span>👀 老板怀疑</span><span id="suspicion-num">0%</span></div>
+      <div class="progress-bg"><div class="progress-fill suspicion-fill" id="suspicion-bar"></div></div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label"><span>☕ 精神状态</span><span id="spirit-num">100%</span></div>
+      <div class="progress-bg"><div class="progress-fill spirit-fill" id="spirit-bar"></div></div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label"><span>🐟 摸鱼收入</span><span id="fish-num">¥0.0</span></div>
+      <div class="progress-bg"><div class="progress-fill fish-fill" id="fish-bar"></div></div>
+    </div>
+  </div>
+
+  <div id="office-stage">
+    <div id="danger-overlay"></div>
+
+    <div class="room-area" id="boss-room">🚪 老板室</div>
+    <div class="room-area" id="toilet-room">🚻 卫生间</div>
+    <div id="water-cooler">🚰</div>
+
+    <div class="desk" id="desk-li">
+      <div style="font-size: 20px;">💻</div>
+      <div class="char-name">小李</div>
+    </div>
+    <div class="desk" id="desk-mei">
+      <div style="font-size: 20px;">🧋</div>
+      <div class="char-name">小美</div>
+    </div>
+
+    <div class="desk" id="player-desk">
+      <div id="status-bubble">发呆中</div>
+      <div id="player-avatar">👨‍💻</div>
+      <div class="char-name">我 (工位)</div>
+    </div>
+
+    <div class="character" id="boss">
+      <div style="font-size: 26px;">👔</div>
+      <div class="char-name" id="boss-state-text" style="background:#e17055;">王总</div>
+    </div>
+
+    <div id="cover-btn-container">
+      <button id="cover-btn" onclick="triggerDisguise()">🚨 疯狂切回工作!</button>
+      <div id="countdown-ring">剩余反应时间: <span id="react-timer">1.5</span>s</div>
+    </div>
+  </div>
+
+  <div id="action-panel">
+    <button class="action-btn" id="btn-work" onclick="setAction('work')">
+      <span class="action-icon">💼</span>
+      <span>认真工作</span>
+      <span class="action-risk">耗精神 | 降怀疑</span>
+    </button>
+    <button class="action-btn" id="btn-phone" onclick="setAction('phone')">
+      <span class="action-icon">📱</span>
+      <span>刷手机</span>
+      <span class="action-risk">收手快 | +摸鱼</span>
+    </button>
+    <button class="action-btn" id="btn-game" onclick="setAction('game')">
+      <span class="action-icon">🎮</span>
+      <span>偷偷打游戏</span>
+      <span class="action-risk">极高收益 | 收手慢</span>
+    </button>
+    <button class="action-btn" id="btn-toilet" onclick="setAction('toilet')">
+      <span class="action-icon">🚽</span>
+      <span>带薪拉屎</span>
+      <span class="action-risk">安全避难 | +摸鱼</span>
+    </button>
+    <button class="action-btn" id="btn-coffee" onclick="useCoffee()">
+      <span class="action-icon">☕</span>
+      <span>喝咖啡 (<span id="coffee-left">2</span>)</span>
+      <span class="action-risk">秒回+25精神</span>
+    </button>
+    <button class="action-btn" id="btn-chat" onclick="setAction('chat')">
+      <span class="action-icon">💬</span>
+      <span>工位闲聊</span>
+      <span class="action-risk">回精神 | 平衡型</span>
+    </button>
+  </div>
+
+  <div class="modal-overlay" id="event-modal">
+    <div class="modal-card">
+      <div class="modal-title" id="event-title">突发事件</div>
+      <div class="modal-desc" id="event-desc">同事叫你一起点奶茶，你去不去？</div>
+      <div id="event-options"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="skill-modal">
+    <div class="modal-card">
+      <div class="modal-title">🎉 中午休息技能觉醒！</div>
+      <div class="modal-desc">选择一个被动摸鱼神技 (三选一)</div>
+      <div id="skill-options"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="result-modal">
+    <div class="modal-card" id="settlement-card">
+      <div class="modal-title" style="text-align: center;">🏁 今日打工结算报告</div>
+      <div class="rank-badge" id="report-rank">SS</div>
+      <div class="title-tag" id="report-title">《公司最稳定的混子》</div>
+      
+      <div class="income-box">
+        <div style="font-size: 11px; color: #636e72;">今日带薪摸鱼收入</div>
+        <div class="income-val" id="report-income">¥248.50</div>
+      </div>
+
+      <div class="report-row"><span>工作完成度:</span><b id="rep-work">100%</b></div>
+      <div class="report-row"><span>摸鱼总时长:</span><b id="rep-fish">5小时20分</b></div>
+      <div class="report-row"><span>厕所驻留:</span><b id="rep-toilet">45分钟</b></div>
+      <div class="report-row"><span>老板最终怀疑度:</span><b id="rep-suspicion">15%</b></div>
+
+      <button class="choice-btn" style="margin-top: 15px; background:#00b894;" onclick="restartGame()">再来一局 (明天继续摸)</button>
+    </div>
+  </div>
 </div>
 
 <script>
-    function triggerPrank() {
-        document.getElementById('prankOverlay').classList.add('active');
-    }
-    function closePrank() {
-        document.getElementById('prankOverlay').classList.remove('active');
-    }
-    function copyPrank() {
-        const text = "我刚才想给你转账，结果系统提示：今天是肯德基疯狂星期四，必须你V我50块吃炸鸡才能解锁收款功能。认命吧！";
-        navigator.clipboard.writeText(text).then(() => {
-            alert('整蛊文案已复制！');
-        });
-    }
-</script>
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function beep(freq, duration, type="sine") {
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type; osc.frequency.value = freq;
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start();
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.stop(audioCtx.currentTime + duration);
+  } catch(e){}
+}
+function playHeartbeat() { beep(80, 0.15, 'square'); setTimeout(()=>beep(65, 0.15, 'square'), 200); }
+function playAlert() { beep(600, 0.3, 'sawtooth'); }
+function playSuccess() { beep(523, 0.1); setTimeout(()=>beep(659, 0.15), 100); }
+function playBusted() { beep(150, 0.5, 'sawtooth'); }
 
+let state = {
+  timeMinutes: 9 * 60,
+  workProgress: 0,
+  suspicion: 10,
+  spirit: 90,
+  fishIncome: 0,
+  currentAction: 'idle',
+  coffeeCount: 2,
+  isPaused: false,
+  gameOver: false,
+  workSeconds: 0,
+  fishSeconds: 0,
+  toiletSeconds: 0,
+  reactionTime: 1.5,
+  antiPeekRate: 0,
+  toiletBonus: 1.0,
+  isUnderInspection: false,
+  reactTimerLeft: 1.5,
+  reactInterval: null,
+  turnBackTriggered: false
+};
+
+const POSITIONS = {
+  bossRoom: { top: 30, left: 45 },
+  water: { top: 120, left: 70 },
+  deskLi: { top: 220, left: 60 },
+  deskMei: { top: 220, left: 240 },
+  playerDesk: { top: 310, left: 160 },
+  toilet: { top: 30, left: 280 }
+};
+
+let bossPos = { top: 30, left: 45 };
+let bossTarget = POSITIONS.bossRoom;
+
+function setAction(action) {
+  if (state.gameOver || state.isPaused) return;
+  if (action === 'toilet') {
+    document.getElementById('player-avatar').style.display = 'none';
+    document.getElementById('status-bubble').innerText = '🚽 厕所避难中';
+  } else {
+    document.getElementById('player-avatar').style.display = 'block';
+  }
+
+  state.currentAction = action;
+  document.querySelectorAll('.action-btn').forEach(btn => btn.classList.remove('active'));
+  const btn = document.getElementById(`btn-${action}`);
+  if (btn) btn.classList.add('active');
+
+  const bubble = document.getElementById('status-bubble');
+  const avatar = document.getElementById('player-avatar');
+  if (action === 'work') { bubble.innerText = '💼 疯狂敲键盘'; avatar.innerText = '👨‍💻'; beep(400, 0.05); }
+  else if (action === 'phone') { bubble.innerText = '📱 刷短视频中'; avatar.innerText = '🤳'; beep(500, 0.05); }
+  else if (action === 'game') { bubble.innerText = '🎮 正在排位!'; avatar.innerText = '🕹️'; beep(600, 0.05); }
+  else if (action === 'chat') { bubble.innerText = '💬 办公室八卦'; avatar.innerText = '🗣️'; }
+}
+
+function useCoffee() {
+  if (state.coffeeCount > 0) {
+    state.coffeeCount--;
+    state.spirit = Math.min(100, state.spirit + 25);
+    document.getElementById('coffee-left').innerText = state.coffeeCount;
+    beep(700, 0.15);
+    showFloatingText('+25 精神!');
+  }
+}
+
+function startBossInspection() {
+  if (state.currentAction === 'toilet') {
+    showFloatingText('人在厕所，逃过一劫!');
+    return;
+  }
+  state.isUnderInspection = true;
+  document.getElementById('danger-overlay').classList.add('danger-pulse');
+  document.getElementById('cover-btn-container').style.display = 'flex';
+  state.reactTimerLeft = state.reactionTime;
+  document.getElementById('react-timer').innerText = state.reactTimerLeft.toFixed(1);
+  playAlert();
+
+  let intervalMs = 100;
+  state.reactInterval = setInterval(() => {
+    state.reactTimerLeft -= intervalMs / 1000;
+    playHeartbeat();
+    document.getElementById('react-timer').innerText = Math.max(0, state.reactTimerLeft).toFixed(1);
+    if (state.reactTimerLeft <= 0) {
+      clearInterval(state.reactInterval);
+      handleInspectionFail();
+    }
+  }, intervalMs);
+}
+
+function triggerDisguise() {
+  if (!state.isUnderInspection) return;
+  clearInterval(state.reactInterval);
+  state.isUnderInspection = false;
+  document.getElementById('danger-overlay').classList.remove('danger-pulse');
+  document.getElementById('cover-btn-container').style.display = 'none';
+
+  let delay = 0.4;
+  if (state.currentAction === 'game') delay = 1.0;
+  if (state.currentAction === 'work') delay = 0.1;
+
+  if (state.reactTimerLeft > delay) {
+    setAction('work');
+    state.suspicion = Math.max(0, state.suspicion - 5);
+    state.fishIncome += 5.0;
+    playSuccess();
+    showFloatingText('成功骗过! 怀疑度 -5%');
+  } else {
+    handleInspectionFail();
+  }
+}
+
+function handleInspectionFail() {
+  state.isUnderInspection = false;
+  document.getElementById('danger-overlay').classList.remove('danger-pulse');
+  document.getElementById('cover-btn-container').style.display = 'none';
+  let penalty = 25 * (1 - state.antiPeekRate);
+  state.suspicion = Math.min(100, state.suspicion + penalty);
+  playBusted();
+  showFloatingText('🚨 被老板抓现行! 怀疑度 +' + Math.round(penalty) + '%');
+  if (state.suspicion >= 100) triggerGameOver("你被老板开除了！(怀疑度达100%)");
+}
+
+function showFloatingText(txt) {
+  const bubble = document.getElementById('status-bubble');
+  bubble.innerText = txt;
+  setTimeout(() => {
+    if (state.currentAction === 'work') bubble.innerText = '💼 疯狂敲键盘';
+    else if (state.currentAction === 'phone') bubble.innerText = '📱 刷短视频中';
+    else if (state.currentAction === 'game') bubble.innerText = '🎮 正在排位!';
+    else if (state.currentAction === 'toilet') bubble.innerText = '🚽 厕所避难中';
+  }, 2000);
+}
+
+function updateBossAI() {
+  const bossEl = document.getElementById('boss');
+  let speed = 0.04;
+  bossPos.top += (bossTarget.top - bossPos.top) * speed;
+  bossPos.left += (bossTarget.left - bossPos.left) * speed;
+  bossEl.style.top = bossPos.top + 'px';
+  bossEl.style.left = bossPos.left + 'px';
+
+  let distToPlayer = Math.hypot(bossPos.top - POSITIONS.playerDesk.top, bossPos.left - POSITIONS.playerDesk.left);
+  if (distToPlayer < 65 && !state.isUnderInspection && bossTarget === POSITIONS.playerDesk) {
+    startBossInspection();
+    setTimeout(() => {
+      if (!state.turnBackTriggered && Math.random() < 0.4) {
+        state.turnBackTriggered = true;
+        bossTarget = POSITIONS.water;
+        setTimeout(() => {
+          showFloatingText('王总突然折返!(回马枪)');
+          bossTarget = POSITIONS.playerDesk;
+        }, 2000);
+      } else {
+        bossTarget = [POSITIONS.bossRoom, POSITIONS.deskLi, POSITIONS.deskMei, POSITIONS.water][Math.floor(Math.random()*4)];
+      }
+    }, 2000);
+  }
+
+  let distToTarget = Math.hypot(bossPos.top - bossTarget.top, bossPos.left - bossTarget.left);
+  if (distToTarget < 10 && bossTarget !== POSITIONS.playerDesk) {
+    setTimeout(() => {
+      if (Math.random() < 0.35) {
+        bossTarget = POSITIONS.playerDesk;
+        document.getElementById('boss-state-text').innerText = '巡查中👀';
+      } else {
+        const spots = [POSITIONS.bossRoom, POSITIONS.deskLi, POSITIONS.deskMei, POSITIONS.water];
+        bossTarget = spots[Math.floor(Math.random() * spots.length)];
+        document.getElementById('boss-state-text').innerText = '巡逻中';
+      }
+    }, 1500);
+  }
+}
+
+let gameLoopInterval = setInterval(() => {
+  if (state.isPaused || state.gameOver) return;
+  state.timeMinutes += 1;
+  let h = Math.floor(state.timeMinutes / 60);
+  let m = state.timeMinutes % 60;
+  document.getElementById('game-clock').innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+
+  if (state.currentAction === 'work') {
+    let eff = state.spirit > 30 ? 0.8 : 0.35;
+    state.workProgress = Math.min(100, state.workProgress + eff);
+    state.spirit = Math.max(0, state.spirit - 0.25);
+    state.suspicion = Math.max(0, state.suspicion - 0.08);
+    state.workSeconds += 1;
+  } else if (state.currentAction === 'phone') {
+    state.spirit = Math.min(100, state.spirit + 0.3);
+    state.fishIncome += 0.8;
+    state.fishSeconds += 1;
+  } else if (state.currentAction === 'game') {
+    state.spirit = Math.min(100, state.spirit + 0.5);
+    state.fishIncome += 1.8;
+    state.fishSeconds += 1;
+  } else if (state.currentAction === 'toilet') {
+    state.spirit = Math.min(100, state.spirit + 0.4);
+    state.fishIncome += 1.2 * state.toiletBonus;
+    state.toiletSeconds += 1;
+  } else if (state.currentAction === 'chat') {
+    state.spirit = Math.min(100, state.spirit + 0.35);
+    state.fishIncome += 0.6;
+    state.fishSeconds += 1;
+  }
+
+  if (state.timeMinutes === 12 * 60) triggerSkillPick();
+  if (state.timeMinutes === 14 * 60 + 30) triggerEvent();
+  if (state.timeMinutes >= 18 * 60) triggerSettlement();
+
+  updateBossAI();
+  updateUI();
+}, 100);
+
+function updateUI() {
+  document.getElementById('work-bar').style.width = state.workProgress + '%';
+  document.getElementById('work-num').innerText = Math.round(state.workProgress) + '%';
+  document.getElementById('suspicion-bar').style.width = state.suspicion + '%';
+  document.getElementById('suspicion-num').innerText = Math.round(state.suspicion) + '%';
+  document.getElementById('spirit-bar').style.width = state.spirit + '%';
+  document.getElementById('spirit-num').innerText = Math.round(state.spirit) + '%';
+  document.getElementById('fish-bar').style.width = Math.min(100, (state.fishIncome / 200) * 100) + '%';
+  document.getElementById('fish-num').innerText = '¥' + state.fishIncome.toFixed(1);
+}
+
+function triggerEvent() {
+  state.isPaused = true;
+  const modal = document.getElementById('event-modal');
+  const opts = document.getElementById('event-options');
+  opts.innerHTML = `
+    <button class="choice-btn" onclick="resolveEvent(1)">🧋 喝！(精神+20, 摸鱼+15)</button>
+    <button class="choice-btn" onclick="resolveEvent(2)">❌ 不了，减肥 (怀疑度-5%)</button>
+    <button class="choice-btn" onclick="resolveEvent(3)">🤝 帮老板点一杯 (老板好感+, 金币-10)</button>
+  `;
+  modal.style.display = 'flex';
+}
+
+function resolveEvent(choice) {
+  if (choice === 1) { state.spirit = Math.min(100, state.spirit + 20); state.fishIncome += 15; }
+  else if (choice === 2) { state.suspicion = Math.max(0, state.suspicion - 5); }
+  else if (choice === 3) { state.suspicion = Math.max(0, state.suspicion - 15); }
+  document.getElementById('event-modal').style.display = 'none';
+  state.isPaused = false;
+}
+
+function triggerSkillPick() {
+  state.isPaused = true;
+  const modal = document.getElementById('skill-modal');
+  const opts = document.getElementById('skill-options');
+  opts.innerHTML = `
+    <button class="choice-btn" onclick="resolveSkill(1)">⌨️ 熟练 ALT+TAB (反应时间提升至 2.0s)</button>
+    <button class="choice-btn" onclick="resolveSkill(2)">🖥️ 防窥膜 (被抓怀疑增长减少 35%)</button>
+    <button class="choice-btn" onclick="resolveSkill(3)">🚽 厕所战神 (厕所摸鱼收益 +50%)</button>
+  `;
+  modal.style.display = 'flex';
+}
+
+function resolveSkill(choice) {
+  if (choice === 1) { state.reactionTime = 2.0; showFloatingText('技能已生效: 反应时间+0.5s'); }
+  else if (choice === 2) { state.antiPeekRate = 0.35; showFloatingText('技能已生效: 防窥屏被抓保护'); }
+  else if (choice === 3) { state.toiletBonus = 1.5; showFloatingText('技能已生效: 厕所战神收益UP'); }
+  document.getElementById('skill-modal').style.display = 'none';
+  state.isPaused = false;
+}
+
+function triggerSettlement() {
+  state.gameOver = true;
+  const modal = document.getElementById('result-modal');
+  let rank = 'C';
+  let title = '《老实打工人》';
+  if (state.workProgress >= 100) {
+    if (state.fishIncome > 180 && state.suspicion < 30) { rank = 'SSS'; title = '《老板眼皮底下的神》'; }
+    else if (state.fishIncome > 120) { rank = 'SS'; title = '《公司最稳定的混子》'; }
+    else { rank = 'S'; title = '《带薪摸鱼熟练工》'; }
+  } else if (state.workProgress >= 80) {
+    rank = 'A'; title = '《还算会混》';
+  }
+  document.getElementById('report-rank').innerText = rank;
+  document.getElementById('report-title').innerText = title;
+  document.getElementById('report-income').innerText = '¥' + state.fishIncome.toFixed(2);
+  document.getElementById('rep-work').innerText = Math.round(state.workProgress) + '%';
+  document.getElementById('rep-fish').innerText = Math.round(state.fishSeconds * 6 / 60) + '小时' + (state.fishSeconds * 6 % 60) + '分';
+  document.getElementById('rep-toilet').innerText = Math.round(state.toiletSeconds * 6) + '分钟';
+  document.getElementById('rep-suspicion').innerText = Math.round(state.suspicion) + '%';
+  modal.style.display = 'flex';
+}
+
+function triggerGameOver(reason) {
+  state.gameOver = true;
+  alert(reason);
+  location.reload();
+}
+
+function restartGame() {
+  location.reload();
+}
+</script>
 </body>
 </html>
