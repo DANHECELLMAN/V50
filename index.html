@@ -3,21 +3,26 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>《今天也不想上班》- 带薪摸鱼模拟器 Demo V0.1</title>
+<title>《今天也不想上班》- 带薪摸鱼模拟器 V0.3</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
-  body { background: #1a1a24; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; color: #333; }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, sans-serif; }
+  body { background: #12131a; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; color: #333; }
   #game-container {
     width: 100vw; max-width: 420px; height: 100vh; max-height: 840px;
     background: #f5f6fa; display: flex; flex-direction: column; position: relative;
-    overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.5); border-radius: 12px;
+    overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border-radius: 12px;
   }
+
+  /* 顶部 HUD */
   #top-hud {
     background: #2d3436; color: #fff; padding: 8px 12px; display: flex;
     justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold;
     z-index: 10;
   }
-  .time-badge { background: #00cec9; color: #2d3436; padding: 3px 8px; border-radius: 6px; font-size: 14px; }
+  .time-badge { background: #00cec9; color: #2d3436; padding: 3px 8px; border-radius: 6px; font-size: 14px; font-weight: 900; }
+  .warning-badge { background: #d63031; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+
+  /* 状态栏 */
   #status-bars {
     background: #dfe6e9; padding: 8px 12px; display: grid; grid-template-columns: 1fr 1fr;
     gap: 6px; font-size: 11px; z-index: 10; border-bottom: 2px solid #b2bec3;
@@ -29,109 +34,139 @@
   .work-fill { background: #0984e3; }
   .suspicion-fill { background: #d63031; }
   .spirit-fill { background: #00b894; }
-  .fish-fill { background: #fdcb6e; }
+  .fish-fill { background: #e17055; }
 
+  /* 办公室舞台 */
   #office-stage {
     flex: 1; position: relative; background: #e8eaed; overflow: hidden;
     background-image: radial-gradient(#dcdde1 15%, transparent 16%);
     background-size: 20px 20px;
   }
+
+  /* 区域 */
   .room-area {
     position: absolute; border: 2px dashed #b2bec3; border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; color: #7f8c8d; font-weight: bold;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-size: 11px; color: #7f8c8d; font-weight: bold;
   }
-  #boss-room { top: 10px; left: 10px; width: 100px; height: 70px; background: #ffeaa7; border-color: #fdcb6e; color: #d35400; }
-  #toilet-room { top: 10px; right: 10px; width: 80px; height: 70px; background: #81ecec; border-color: #00cec9; color: #0097e6; }
-  #water-cooler { top: 110px; left: 20px; width: 40px; height: 50px; background: #74b9ff; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  #boss-room { top: 10px; left: 10px; width: 95px; height: 65px; background: #ffeaa7; border-color: #fdcb6e; color: #d35400; }
+  #toilet-room { top: 10px; right: 10px; width: 90px; height: 65px; background: #81ecec; border-color: #00cec9; color: #0097e6; }
+  #water-cooler { top: 105px; left: 20px; width: 38px; height: 45px; background: #74b9ff; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
 
+  /* 工位与角色 */
   .desk {
     position: absolute; width: 85px; height: 60px; background: #fff;
     border: 2px solid #636e72; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
   }
-  #player-desk { bottom: 30px; left: 50%; transform: translateX(-50%); width: 110px; height: 75px; border-color: #0984e3; border-width: 3px; background: #f1f2f6; }
-  #desk-li { bottom: 130px; left: 25px; }
-  #desk-mei { bottom: 130px; right: 25px; }
+  #player-desk { bottom: 25px; left: 50%; transform: translateX(-50%); width: 115px; height: 75px; border-color: #0984e3; border-width: 3px; background: #f1f2f6; }
+  #desk-li { bottom: 125px; left: 25px; }
+  #desk-mei { bottom: 125px; right: 25px; }
 
   .character {
     position: absolute; width: 42px; height: 42px; border-radius: 50%;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    font-size: 22px; transition: all 0.3s ease; z-index: 5;
+    font-size: 22px; transition: all 0.2s ease; z-index: 5;
   }
-  .char-name { font-size: 10px; font-weight: bold; background: rgba(0,0,0,0.6); color: #fff; padding: 1px 4px; border-radius: 4px; margin-top: -4px; }
+  .char-name { font-size: 10px; font-weight: bold; background: rgba(0,0,0,0.65); color: #fff; padding: 1px 4px; border-radius: 4px; margin-top: -3px; }
   
-  #boss { top: 25px; left: 40px; background: #e17055; box-shadow: 0 0 10px rgba(225,112,85,0.5); }
+  #boss { top: 25px; left: 40px; background: #e17055; box-shadow: 0 0 12px rgba(225,112,85,0.6); }
   #player-avatar { position: absolute; top: -20px; font-size: 32px; }
   #status-bubble {
     position: absolute; top: -45px; background: #fff; border: 1.5px solid #2d3436;
     padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;
-    white-space: nowrap; box-shadow: 0 2px 5px rgba(0,0,0,0.15); animation: bounce 1s infinite alternate;
+    white-space: nowrap; box-shadow: 0 2px 5px rgba(0,0,0,0.15); animation: bounce 0.8s infinite alternate;
   }
   @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-3px); } }
 
+  /* 监视与会议横幅 */
+  #boss-stare-banner {
+    position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+    background: #d63031; color: #fff; padding: 6px 14px; border-radius: 20px;
+    font-size: 12px; font-weight: 900; display: none; z-index: 25;
+    box-shadow: 0 4px 10px rgba(214,48,49,0.5);
+  }
+  #meeting-banner {
+    position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+    background: #6c5ce7; color: #fff; padding: 6px 14px; border-radius: 20px;
+    font-size: 12px; font-weight: 900; display: none; z-index: 25;
+    box-shadow: 0 4px 10px rgba(108,92,231,0.5);
+  }
+
+  /* 警报红边 */
   #danger-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    box-shadow: inset 0 0 40px rgba(214, 48, 49, 0.8); pointer-events: none;
-    opacity: 0; transition: opacity 0.2s ease; z-index: 20;
+    box-shadow: inset 0 0 45px rgba(214, 48, 49, 0.9); pointer-events: none;
+    opacity: 0; transition: opacity 0.15s ease; z-index: 20;
   }
-  .danger-pulse { animation: redPulse 0.5s infinite alternate; }
-  @keyframes redPulse { from { opacity: 0.3; } to { opacity: 1; } }
+  .danger-pulse { animation: redPulse 0.4s infinite alternate; }
+  @keyframes redPulse { from { opacity: 0.2; } to { opacity: 1; } }
 
+  /* 紧急伪装按钮 */
   #cover-btn-container {
     position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
     z-index: 30; display: none; flex-direction: column; align-items: center;
   }
   #cover-btn {
-    background: #d63031; color: #fff; font-size: 20px; font-weight: 900;
-    border: none; padding: 14px 28px; border-radius: 50px; cursor: pointer;
-    box-shadow: 0 6px 20px rgba(214,48,49,0.6); animation: btnShake 0.2s infinite;
+    background: #d63031; color: #fff; font-size: 21px; font-weight: 900;
+    border: none; padding: 14px 26px; border-radius: 50px; cursor: pointer;
+    box-shadow: 0 6px 22px rgba(214,48,49,0.7); animation: btnShake 0.15s infinite;
   }
-  #countdown-ring { font-size: 13px; color: #d63031; font-weight: bold; background: #fff; padding: 3px 10px; border-radius: 10px; margin-top: 6px; }
+  #countdown-ring { font-size: 12px; color: #d63031; font-weight: 900; background: #fff; padding: 3px 10px; border-radius: 10px; margin-top: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
   @keyframes btnShake { 0%{transform: scale(1);} 50%{transform: scale(1.08);} 100%{transform: scale(1);} }
 
+  /* 底部操作面板 */
   #action-panel {
-    background: #fff; padding: 10px; border-top: 2px solid #dfe6e9;
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; z-index: 10;
+    background: #fff; padding: 8px; border-top: 2px solid #dfe6e9;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; z-index: 10;
   }
   .action-btn {
     background: #f8f9fa; border: 2px solid #b2bec3; border-radius: 8px;
-    padding: 10px 4px; display: flex; flex-direction: column; align-items: center;
-    gap: 3px; cursor: pointer; transition: all 0.1s; font-size: 12px; font-weight: bold;
+    padding: 8px 3px; display: flex; flex-direction: column; align-items: center;
+    gap: 2px; cursor: pointer; transition: all 0.1s; font-size: 12px; font-weight: bold;
   }
-  .action-btn:active { transform: scale(0.95); }
+  .action-btn:active { transform: scale(0.94); }
   .action-btn.active { border-color: #0984e3; background: #e1f5fe; box-shadow: 0 0 8px rgba(9,132,227,0.4); }
+  .action-btn.disabled { opacity: 0.4; pointer-events: none; filter: grayscale(1); }
   .action-icon { font-size: 20px; }
   .action-risk { font-size: 9px; color: #e17055; }
 
+  /* 弹窗与结算 */
   .modal-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.7); display: none; justify-content: center;
-    align-items: center; z-index: 100; padding: 20px;
+    background: rgba(0,0,0,0.75); display: none; justify-content: center;
+    align-items: center; z-index: 100; padding: 18px;
   }
   .modal-card {
-    background: #fff; width: 100%; border-radius: 16px; padding: 20px;
-    text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.3); animation: popIn 0.3s ease;
+    background: #fff; width: 100%; border-radius: 16px; padding: 18px;
+    text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.4); animation: popIn 0.25s ease;
   }
-  @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-  .modal-title { font-size: 18px; font-weight: bold; margin-bottom: 10px; color: #2d3436; }
-  .modal-desc { font-size: 13px; color: #636e72; margin-bottom: 16px; line-height: 1.4; }
+  @keyframes popIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .modal-tag { display: inline-block; background: #ffeaa7; color: #d35400; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 10px; margin-bottom: 6px; }
+  .modal-title { font-size: 17px; font-weight: 900; margin-bottom: 6px; color: #2d3436; }
+  .modal-desc { font-size: 12.5px; color: #636e72; margin-bottom: 14px; line-height: 1.4; text-align: left; background: #f1f2f6; padding: 10px; border-radius: 8px; }
+  
+  .event-btn {
+    width: 100%; background: #fff; color: #2d3436; border: 2px solid #b2bec3; padding: 10px 8px;
+    border-radius: 8px; font-size: 12px; font-weight: bold; margin-bottom: 8px; cursor: pointer;
+    text-align: left; display: flex; flex-direction: column; gap: 3px; transition: all 0.1s;
+  }
+  .event-btn:hover, .event-btn:active { border-color: #0984e3; background: #f0f7ff; }
+  .event-btn-sub { font-size: 10px; color: #0984e3; font-weight: normal; }
+
   .choice-btn {
-    width: 100%; background: #0984e3; color: #fff; border: none; padding: 12px;
-    border-radius: 8px; font-size: 14px; font-weight: bold; margin-bottom: 8px; cursor: pointer;
+    width: 100%; background: #0984e3; color: #fff; border: none; padding: 11px;
+    border-radius: 8px; font-size: 13px; font-weight: bold; margin-bottom: 7px; cursor: pointer;
   }
   .choice-btn:nth-child(2) { background: #00b894; }
   .choice-btn:nth-child(3) { background: #6c5ce7; }
 
-  #settlement-card {
-    background: #fffdf9; border: 2px solid #fdcb6e; border-radius: 16px;
-    padding: 16px; text-align: left;
-  }
+  #settlement-card { background: #fffdf9; border: 2px solid #fdcb6e; border-radius: 16px; padding: 16px; text-align: left; }
   .report-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px dashed #dfe6e9; }
-  .income-box { background: #ffeaa7; padding: 12px; border-radius: 8px; text-align: center; margin: 12px 0; }
+  .income-box { background: #ffeaa7; padding: 10px; border-radius: 8px; text-align: center; margin: 10px 0; }
   .income-val { font-size: 26px; font-weight: 900; color: #d63031; }
-  .rank-badge { font-size: 32px; font-weight: 900; color: #e17055; text-align: center; margin: 4px 0; }
-  .title-tag { text-align: center; font-size: 13px; font-weight: bold; color: #636e72; margin-bottom: 12px; }
+  .rank-badge { font-size: 32px; font-weight: 900; color: #e17055; text-align: center; margin: 2px 0; }
+  .title-tag { text-align: center; font-size: 13px; font-weight: bold; color: #636e72; margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -139,8 +174,8 @@
 <div id="game-container">
   <div id="top-hud">
     <div class="time-badge" id="game-clock">09:00</div>
-    <div>今日目标: 销售报表</div>
-    <div>金币: 💰<span id="gold-count">0</span></div>
+    <div style="font-size:12px;">目标: 报表 (<span style="color:#ffeaa7;">及格≥80%</span>)</div>
+    <div class="warning-badge" id="warning-box">警告: 0/3</div>
   </div>
 
   <div id="status-bars">
@@ -149,24 +184,29 @@
       <div class="progress-bg"><div class="progress-fill work-fill" id="work-bar"></div></div>
     </div>
     <div class="stat-item">
-      <div class="stat-label"><span>👀 老板怀疑</span><span id="suspicion-num">0%</span></div>
+      <div class="stat-label"><span>👀 老板怀疑度</span><span id="suspicion-num">10%</span></div>
       <div class="progress-bg"><div class="progress-fill suspicion-fill" id="suspicion-bar"></div></div>
     </div>
     <div class="stat-item">
-      <div class="stat-label"><span>☕ 精神状态</span><span id="spirit-num">100%</span></div>
+      <div class="stat-label"><span>⚡ 精神精力</span><span id="spirit-num">90%</span></div>
       <div class="progress-bg"><div class="progress-fill spirit-fill" id="spirit-bar"></div></div>
     </div>
     <div class="stat-item">
-      <div class="stat-label"><span>🐟 摸鱼收入</span><span id="fish-num">¥0.0</span></div>
+      <div class="stat-label"><span>🐟 摸鱼结余</span><span id="fish-num">¥0.0</span></div>
       <div class="progress-bg"><div class="progress-fill fish-fill" id="fish-bar"></div></div>
     </div>
   </div>
 
   <div id="office-stage">
     <div id="danger-overlay"></div>
+    <div id="boss-stare-banner">👀 老板正在身后监视! (禁止摸鱼)</div>
+    <div id="meeting-banner">📋 全体开会中: 简单说两句... (<span id="meeting-min">10</span>m)</div>
 
     <div class="room-area" id="boss-room">🚪 老板室</div>
-    <div class="room-area" id="toilet-room">🚻 卫生间</div>
+    <div class="room-area" id="toilet-room">
+      <span>🚻 卫生间</span>
+      <span id="toilet-stay-time" style="font-size:10px; color:#d63031;"></span>
+    </div>
     <div id="water-cooler">🚰</div>
 
     <div class="desk" id="desk-li">
@@ -179,19 +219,19 @@
     </div>
 
     <div class="desk" id="player-desk">
-      <div id="status-bubble">发呆中</div>
+      <div id="status-bubble">打卡上班中</div>
       <div id="player-avatar">👨‍💻</div>
       <div class="char-name">我 (工位)</div>
     </div>
 
     <div class="character" id="boss">
-      <div style="font-size: 26px;">👔</div>
+      <div style="font-size: 26px;" id="boss-icon">👔</div>
       <div class="char-name" id="boss-state-text" style="background:#e17055;">王总</div>
     </div>
 
     <div id="cover-btn-container">
       <button id="cover-btn" onclick="triggerDisguise()">🚨 疯狂切回工作!</button>
-      <div id="countdown-ring">剩余反应时间: <span id="react-timer">1.5</span>s</div>
+      <div id="countdown-ring">剩余反应时间: <span id="react-timer">1.25</span>s</div>
     </div>
   </div>
 
@@ -199,68 +239,70 @@
     <button class="action-btn" id="btn-work" onclick="setAction('work')">
       <span class="action-icon">💼</span>
       <span>认真工作</span>
-      <span class="action-risk">耗精神 | 降怀疑</span>
+      <span class="action-risk">耗精神 | 达标必备</span>
     </button>
     <button class="action-btn" id="btn-phone" onclick="setAction('phone')">
       <span class="action-icon">📱</span>
       <span>刷手机</span>
-      <span class="action-risk">收手快 | +摸鱼</span>
+      <span class="action-risk">延迟0.4s | +摸鱼</span>
     </button>
     <button class="action-btn" id="btn-game" onclick="setAction('game')">
       <span class="action-icon">🎮</span>
       <span>偷偷打游戏</span>
-      <span class="action-risk">极高收益 | 收手慢</span>
+      <span class="action-risk">延迟1.0s | 高风险高收益</span>
     </button>
     <button class="action-btn" id="btn-toilet" onclick="setAction('toilet')">
       <span class="action-icon">🚽</span>
       <span>带薪拉屎</span>
-      <span class="action-risk">安全避难 | +摸鱼</span>
+      <span class="action-risk">限时6秒 | 超时被敲门</span>
     </button>
     <button class="action-btn" id="btn-coffee" onclick="useCoffee()">
       <span class="action-icon">☕</span>
       <span>喝咖啡 (<span id="coffee-left">2</span>)</span>
-      <span class="action-risk">秒回+25精神</span>
+      <span class="action-risk">瞬间回+30精神</span>
     </button>
     <button class="action-btn" id="btn-chat" onclick="setAction('chat')">
       <span class="action-icon">💬</span>
       <span>工位闲聊</span>
-      <span class="action-risk">回精神 | 平衡型</span>
+      <span class="action-risk">延迟0.5s | 回精神</span>
     </button>
   </div>
 
   <div class="modal-overlay" id="event-modal">
     <div class="modal-card">
-      <div class="modal-title" id="event-title">突发事件</div>
-      <div class="modal-desc" id="event-desc">同事叫你一起点奶茶，你去不去？</div>
+      <span class="modal-tag" id="event-tag">突发职场事件</span>
+      <div class="modal-title" id="event-title">事件标题</div>
+      <div class="modal-desc" id="event-desc">事件描述文本</div>
       <div id="event-options"></div>
     </div>
   </div>
 
   <div class="modal-overlay" id="skill-modal">
     <div class="modal-card">
-      <div class="modal-title">🎉 中午休息技能觉醒！</div>
-      <div class="modal-desc">选择一个被动摸鱼神技 (三选一)</div>
+      <div class="modal-title">🎉 中午技能觉醒 (三选一)</div>
+      <div class="modal-desc">面对下午更频繁的巡逻，选择你的流派被动技能</div>
       <div id="skill-options"></div>
     </div>
   </div>
 
   <div class="modal-overlay" id="result-modal">
     <div class="modal-card" id="settlement-card">
-      <div class="modal-title" style="text-align: center;">🏁 今日打工结算报告</div>
+      <div class="modal-title" style="text-align: center;" id="settle-header">🏁 今日打工结算报告</div>
       <div class="rank-badge" id="report-rank">SS</div>
       <div class="title-tag" id="report-title">《公司最稳定的混子》</div>
       
       <div class="income-box">
-        <div style="font-size: 11px; color: #636e72;">今日带薪摸鱼收入</div>
-        <div class="income-val" id="report-income">¥248.50</div>
+        <div style="font-size: 11px; color: #636e72;">今日实得带薪摸鱼收入</div>
+        <div class="income-val" id="report-income">¥0.00</div>
       </div>
 
-      <div class="report-row"><span>工作完成度:</span><b id="rep-work">100%</b></div>
-      <div class="report-row"><span>摸鱼总时长:</span><b id="rep-fish">5小时20分</b></div>
-      <div class="report-row"><span>厕所驻留:</span><b id="rep-toilet">45分钟</b></div>
-      <div class="report-row"><span>老板最终怀疑度:</span><b id="rep-suspicion">15%</b></div>
+      <div class="report-row"><span>工作进度 (需≥80%及格):</span><b id="rep-work">0%</b></div>
+      <div class="report-row"><span>被抓现行次数:</span><b id="rep-caught" style="color:#d63031;">0次</b></div>
+      <div class="report-row"><span>累计罚款/没收:</span><b id="rep-penalty" style="color:#d63031;">-¥0.00</b></div>
+      <div class="report-row"><span>老板最终怀疑度:</span><b id="rep-suspicion">0%</b></div>
+      <div class="report-row"><span>解锁成就:</span><b id="rep-achieve" style="color:#6c5ce7;">暂无</b></div>
 
-      <button class="choice-btn" style="margin-top: 15px; background:#00b894;" onclick="restartGame()">再来一局 (明天继续摸)</button>
+      <button class="choice-btn" style="margin-top: 14px; background:#00b894;" onclick="restartGame()">再来一局 (吸取教训)</button>
     </div>
   </div>
 </div>
@@ -274,57 +316,132 @@ function beep(freq, duration, type="sine") {
     osc.type = type; osc.frequency.value = freq;
     osc.connect(gain); gain.connect(audioCtx.destination);
     osc.start();
-    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
     osc.stop(audioCtx.currentTime + duration);
   } catch(e){}
 }
-function playHeartbeat() { beep(80, 0.15, 'square'); setTimeout(()=>beep(65, 0.15, 'square'), 200); }
-function playAlert() { beep(600, 0.3, 'sawtooth'); }
-function playSuccess() { beep(523, 0.1); setTimeout(()=>beep(659, 0.15), 100); }
-function playBusted() { beep(150, 0.5, 'sawtooth'); }
+function playHeartbeat() { beep(80, 0.12, 'square'); setTimeout(()=>beep(60, 0.12, 'square'), 180); }
+function playAlert() { beep(650, 0.25, 'sawtooth'); }
+function playSuccess() { beep(523, 0.08); setTimeout(()=>beep(659, 0.12), 90); }
+function playBusted() { beep(130, 0.45, 'sawtooth'); }
+function playFine() { beep(300, 0.1); setTimeout(()=>beep(200, 0.2), 120); }
+function playEventSound() { beep(440, 0.1); setTimeout(()=>beep(880, 0.2), 100); }
 
 let state = {
   timeMinutes: 9 * 60,
   workProgress: 0,
-  suspicion: 10,
+  suspicion: 12,
   spirit: 90,
   fishIncome: 0,
   currentAction: 'idle',
   coffeeCount: 2,
+  warningCount: 0,
+  caughtCount: 0,
+  totalFined: 0,
   isPaused: false,
   gameOver: false,
-  workSeconds: 0,
-  fishSeconds: 0,
-  toiletSeconds: 0,
-  reactionTime: 1.5,
+  toiletSecondsInRow: 0,
+  maxSafeToiletSec: 6,
+  isUnderStare: false,
+  stareSecondsLeft: 0,
+  isInMeeting: false,
+  meetingMinutesPassed: 0,
+  achievements: [],
+  reactionTime: 1.25,
+  actionDelays: { work: 0.05, phone: 0.4, chat: 0.5, game: 1.0, toilet: 0 },
   antiPeekRate: 0,
-  toiletBonus: 1.0,
+  workEfficiencyBonus: 1.0,
+  milkTeaBuffTimer: 0,
   isUnderInspection: false,
-  reactTimerLeft: 1.5,
+  reactTimerLeft: 1.25,
   reactInterval: null,
   turnBackTriggered: false
 };
 
 const POSITIONS = {
-  bossRoom: { top: 30, left: 45 },
-  water: { top: 120, left: 70 },
-  deskLi: { top: 220, left: 60 },
-  deskMei: { top: 220, left: 240 },
+  bossRoom: { top: 25, left: 45 },
+  water: { top: 110, left: 65 },
+  deskLi: { top: 215, left: 55 },
+  deskMei: { top: 215, left: 245 },
   playerDesk: { top: 310, left: 160 },
-  toilet: { top: 30, left: 280 }
+  toilet: { top: 25, left: 280 }
 };
 
-let bossPos = { top: 30, left: 45 };
+let bossPos = { top: 25, left: 45 };
 let bossTarget = POSITIONS.bossRoom;
 
+const EVENT_POOL = [
+  {
+    triggerTime: 10 * 60 + 30,
+    tag: "📞 外部突发",
+    title: "客户夺命连环 Call",
+    desc: "甲方经理突然打来语音电话，要求同步上周遗留的报表细节，此时你正准备摸鱼……",
+    options: [
+      { text: "【立刻接听专业沟通】", sub: "工作进度 +16%, 精神 -22 (极耗精力但能赶工)", effect: (s)=>{ s.workProgress = Math.min(100, s.workProgress + 16); s.spirit = Math.max(0, s.spirit - 22); } },
+      { text: "【假装信号不好直接挂断】", sub: "精神 +10, 摸鱼 +¥10, 怀疑度 +15% (逃避虽爽但危险)", effect: (s)=>{ s.spirit = Math.min(100, s.spirit + 10); s.fishIncome += 10; s.suspicion = Math.min(100, s.suspicion + 15); } },
+      { text: "【转接给程序员小李】", sub: "怀疑度 -5%, 扣¥10请小李喝水 (成功甩锅)", effect: (s)=>{ s.suspicion = Math.max(0, s.suspicion - 5); s.fishIncome = Math.max(0, s.fishIncome - 10); } }
+    ]
+  },
+  {
+    triggerTime: 13 * 60 + 15,
+    tag: "🧋 办公室社交",
+    title: "小美发起奶茶拼单",
+    desc: "“下午困死了，一起点奶茶吗？还差一杯就免起送费了！”小美探过头来问你。",
+    options: [
+      { text: "【大杯全糖奶茶 (我请!)】", sub: "精神+35, 扣¥22, 获得30秒精神消耗减半Buff", effect: (s)=>{ s.spirit = Math.min(100, s.spirit + 35); s.fishIncome = Math.max(0, s.fishIncome - 22); s.milkTeaBuffTimer = 30; showFloatingText("获得奶茶续命Buff (消耗减半)"); } },
+      { text: "【在减肥，专心赶工】", sub: "工作进度 +8%, 怀疑度 -4%", effect: (s)=>{ s.workProgress = Math.min(100, s.workProgress + 8); s.suspicion = Math.max(0, s.suspicion - 4); } },
+      { text: "【帮王总也点一杯送进办公室】", sub: "扣¥35, 老板怀疑度 -25% (职场人情世故)", effect: (s)=>{ s.suspicion = Math.max(0, s.suspicion - 25); s.fishIncome = Math.max(0, s.fishIncome - 35); } }
+    ]
+  },
+  {
+    triggerTime: 14 * 60 + 40,
+    tag: "👥 领导临时召集",
+    title: "王总：简单开个10分钟会",
+    desc: "“大家去一号会议室，我就简单说两句，不耽误大家下班。”",
+    options: [
+      { text: "【乖乖带本子进会议室】", sub: "触发会议模拟: 无法操作但全额累积带薪摸鱼!", effect: (s)=>{ triggerMeetingEvent(); } }
+    ]
+  },
+  {
+    triggerTime: 16 * 60 + 15,
+    tag: "🖨️ 设备故障",
+    title: "公用打印机卡纸报警",
+    desc: "打印机发出刺耳响声，王总刚好往打印机走去，急需有人处理。",
+    options: [
+      { text: "【挺身而出假装修理】", sub: "名正言顺离开工位摸鱼 +¥25, 精神+15, 怀疑-10%", effect: (s)=>{ s.fishIncome += 25; s.spirit = Math.min(100, s.spirit + 15); s.suspicion = Math.max(0, s.suspicion - 10); showFloatingText("在打印机旁磨洋工成功!"); } },
+      { text: "【假装没听见继续敲键盘】", sub: "工作进度 +6%, 精神 -8", effect: (s)=>{ s.workProgress = Math.min(100, s.workProgress + 6); s.spirit = Math.max(0, s.spirit - 8); } },
+      { text: "【大喊让实习生去修】", sub: "怀疑度 +8% (显得不够热心)", effect: (s)=>{ s.suspicion = Math.min(100, s.suspicion + 8); } }
+    ]
+  },
+  {
+    triggerTime: 17 * 60 + 10,
+    tag: "🎮 最终诱惑",
+    title: "小李发来开黑邀请",
+    desc: "“兄弟，差一人五排，来一把？赢了直接下班！”小李在微信狂戳你。",
+    options: [
+      { text: "【生死看淡，直接上号！】", sub: "摸鱼瞬间 +¥55! (但若被抓直接扣¥100并大怒)", effect: (s)=>{ s.fishIncome += 55; s.suspicion = Math.min(100, s.suspicion + 10); showFloatingText("高风险五排中! 收益狂飙!"); } },
+      { text: "【拒绝诱惑，专心冲刺进度】", sub: "工作进度 +14%, 精神 -10 (稳妥保及格)", effect: (s)=>{ s.workProgress = Math.min(100, s.workProgress + 14); s.spirit = Math.max(0, s.spirit - 10); } },
+      { text: "【把手机架在屏幕前看小李打】", sub: "摸鱼 +¥20, 精神 +15, 无风险", effect: (s)=>{ s.fishIncome += 20; s.spirit = Math.min(100, s.spirit + 15); } }
+    ]
+  }
+];
+
 function setAction(action) {
-  if (state.gameOver || state.isPaused) return;
+  if (state.gameOver || state.isPaused || state.isInMeeting) return;
+  if (state.isUnderStare && action !== 'work') {
+    showFloatingText('❌ 老板在盯着你! 无法摸鱼!');
+    beep(200, 0.1);
+    return;
+  }
   if (action === 'toilet') {
     document.getElementById('player-avatar').style.display = 'none';
     document.getElementById('status-bubble').innerText = '🚽 厕所避难中';
+    state.toiletSecondsInRow = 0;
   } else {
     document.getElementById('player-avatar').style.display = 'block';
+    state.toiletSecondsInRow = 0;
+    document.getElementById('toilet-stay-time').innerText = '';
   }
 
   state.currentAction = action;
@@ -334,42 +451,48 @@ function setAction(action) {
 
   const bubble = document.getElementById('status-bubble');
   const avatar = document.getElementById('player-avatar');
-  if (action === 'work') { bubble.innerText = '💼 疯狂敲键盘'; avatar.innerText = '👨‍💻'; beep(400, 0.05); }
-  else if (action === 'phone') { bubble.innerText = '📱 刷短视频中'; avatar.innerText = '🤳'; beep(500, 0.05); }
-  else if (action === 'game') { bubble.innerText = '🎮 正在排位!'; avatar.innerText = '🕹️'; beep(600, 0.05); }
-  else if (action === 'chat') { bubble.innerText = '💬 办公室八卦'; avatar.innerText = '🗣️'; }
+  if (action === 'work') { bubble.innerText = '💼 疯狂敲键盘'; avatar.innerText = '👨‍💻'; beep(400, 0.04); }
+  else if (action === 'phone') { bubble.innerText = '📱 刷短视频中'; avatar.innerText = '🤳'; beep(500, 0.04); }
+  else if (action === 'game') { bubble.innerText = '🎮 正在排位!'; avatar.innerText = '🕹️'; beep(600, 0.04); }
+  else if (action === 'chat') { bubble.innerText = '💬 聊八卦中'; avatar.innerText = '🗣️'; }
 }
 
 function useCoffee() {
-  if (state.coffeeCount > 0) {
+  if (state.coffeeCount > 0 && !state.isInMeeting) {
     state.coffeeCount--;
-    state.spirit = Math.min(100, state.spirit + 25);
+    state.spirit = Math.min(100, state.spirit + 30);
     document.getElementById('coffee-left').innerText = state.coffeeCount;
-    beep(700, 0.15);
-    showFloatingText('+25 精神!');
+    beep(750, 0.15);
+    showFloatingText('⚡ 咖啡续命: 精神+30!');
   }
 }
 
 function startBossInspection() {
+  if (state.isInMeeting) return;
   if (state.currentAction === 'toilet') {
-    showFloatingText('人在厕所，逃过一劫!');
+    if (state.toiletSecondsInRow > state.maxSafeToiletSec) {
+      handleToiletBusted();
+    } else {
+      showFloatingText('人在厕所，暂时安全...');
+    }
     return;
   }
+
   state.isUnderInspection = true;
   document.getElementById('danger-overlay').classList.add('danger-pulse');
   document.getElementById('cover-btn-container').style.display = 'flex';
   state.reactTimerLeft = state.reactionTime;
-  document.getElementById('react-timer').innerText = state.reactTimerLeft.toFixed(1);
+  document.getElementById('react-timer').innerText = state.reactTimerLeft.toFixed(2);
   playAlert();
 
-  let intervalMs = 100;
+  let intervalMs = 50;
   state.reactInterval = setInterval(() => {
     state.reactTimerLeft -= intervalMs / 1000;
-    playHeartbeat();
-    document.getElementById('react-timer').innerText = Math.max(0, state.reactTimerLeft).toFixed(1);
+    if (Math.random() < 0.3) playHeartbeat();
+    document.getElementById('react-timer').innerText = Math.max(0, state.reactTimerLeft).toFixed(2);
     if (state.reactTimerLeft <= 0) {
       clearInterval(state.reactInterval);
-      handleInspectionFail();
+      handleInspectionFail("反应超时! 被当场抓获!");
     }
   }, intervalMs);
 }
@@ -381,116 +504,213 @@ function triggerDisguise() {
   document.getElementById('danger-overlay').classList.remove('danger-pulse');
   document.getElementById('cover-btn-container').style.display = 'none';
 
-  let delay = 0.4;
-  if (state.currentAction === 'game') delay = 1.0;
-  if (state.currentAction === 'work') delay = 0.1;
-
+  let delay = state.actionDelays[state.currentAction] || 0.4;
   if (state.reactTimerLeft > delay) {
     setAction('work');
-    state.suspicion = Math.max(0, state.suspicion - 5);
-    state.fishIncome += 5.0;
+    state.suspicion = Math.max(0, state.suspicion - 4);
+    state.fishIncome += 3.0;
     playSuccess();
-    showFloatingText('成功骗过! 怀疑度 -5%');
+    showFloatingText('✨ 险象环生! 成功切回Excel (怀疑-4%)');
   } else {
-    handleInspectionFail();
+    handleInspectionFail(`收手太慢! (${state.currentAction === 'game' ? '游戏没关掉' : '手机被看到了'})`);
   }
 }
 
-function handleInspectionFail() {
+function handleInspectionFail(reason) {
   state.isUnderInspection = false;
   document.getElementById('danger-overlay').classList.remove('danger-pulse');
   document.getElementById('cover-btn-container').style.display = 'none';
-  let penalty = 25 * (1 - state.antiPeekRate);
-  state.suspicion = Math.min(100, state.suspicion + penalty);
+
+  state.caughtCount++;
   playBusted();
-  showFloatingText('🚨 被老板抓现行! 怀疑度 +' + Math.round(penalty) + '%');
-  if (state.suspicion >= 100) triggerGameOver("你被老板开除了！(怀疑度达100%)");
+
+  let penaltyMoney = Math.min(state.fishIncome, 30 + state.fishIncome * 0.4);
+  state.fishIncome = Math.max(0, state.fishIncome - penaltyMoney);
+  state.totalFined += penaltyMoney;
+
+  let suspGain = (30 * (1 - state.antiPeekRate));
+  state.suspicion = Math.min(100, state.suspicion + suspGain);
+
+  triggerBossStare(4);
+  showFloatingText(`🚨 ${reason} 没收¥${penaltyMoney.toFixed(1)} 怀疑+${Math.round(suspGain)}%`);
+  playFine();
+
+  if (state.suspicion >= 100) triggerGameOver("你被开除了！(老板怀疑度突破 100%，人事约谈)");
+}
+
+function handleToiletBusted() {
+  playBusted();
+  state.suspicion = Math.min(100, state.suspicion + 20);
+  state.fishIncome = Math.max(0, state.fishIncome - 25);
+  state.totalFined += 25;
+  showFloatingText('🚪 王总猛敲厕所门: "掉坑里了?!" 怀疑+20% 罚款¥25');
+  setAction('work');
+  triggerBossStare(3);
+}
+
+function triggerBossStare(seconds) {
+  state.isUnderStare = true;
+  state.stareSecondsLeft = seconds;
+  document.getElementById('boss-stare-banner').style.display = 'block';
+  setAction('work');
+
+  ['phone','game','toilet','chat'].forEach(act => {
+    document.getElementById(`btn-${act}`).classList.add('disabled');
+  });
+
+  let stareTimer = setInterval(() => {
+    state.stareSecondsLeft--;
+    if (state.stareSecondsLeft <= 0 || state.gameOver) {
+      clearInterval(stareTimer);
+      state.isUnderStare = false;
+      document.getElementById('boss-stare-banner').style.display = 'none';
+      ['phone','game','toilet','chat'].forEach(act => {
+        document.getElementById(`btn-${act}`).classList.remove('disabled');
+      });
+      showFloatingText('老板终于走开了...');
+    }
+  }, 1000);
+}
+
+function triggerMeetingEvent() {
+  state.isInMeeting = true;
+  document.getElementById('meeting-banner').style.display = 'block';
+  document.getElementById('player-avatar').innerText = '😴';
+  document.getElementById('status-bubble').innerText = '📋 会议中 (假装在听)';
+  
+  ['work','phone','game','toilet','coffee','chat'].forEach(act => {
+    document.getElementById(`btn-${act}`).classList.add('disabled');
+  });
+
+  let meetingTimes = [10, 20, 35, 47];
+  let step = 0;
+  let meetingInterval = setInterval(() => {
+    step++;
+    if (step < meetingTimes.length) {
+      document.getElementById('meeting-min').innerText = meetingTimes[step];
+      state.fishIncome += 10;
+      beep(350, 0.08);
+    } else {
+      clearInterval(meetingInterval);
+      state.isInMeeting = false;
+      document.getElementById('meeting-banner').style.display = 'none';
+      ['work','phone','game','toilet','coffee','chat'].forEach(act => {
+        document.getElementById(`btn-${act}`).classList.remove('disabled');
+      });
+      state.fishIncome += 15;
+      state.spirit = Math.min(100, state.spirit + 15);
+      state.achievements.push("《简单说两句》(开会47分钟)");
+      showFloatingText("🎉 会议结束! 带薪摸鱼累计+¥45, 解锁成就!");
+      setAction('work');
+    }
+  }, 1000);
 }
 
 function showFloatingText(txt) {
   const bubble = document.getElementById('status-bubble');
   bubble.innerText = txt;
-  setTimeout(() => {
-    if (state.currentAction === 'work') bubble.innerText = '💼 疯狂敲键盘';
-    else if (state.currentAction === 'phone') bubble.innerText = '📱 刷短视频中';
-    else if (state.currentAction === 'game') bubble.innerText = '🎮 正在排位!';
-    else if (state.currentAction === 'toilet') bubble.innerText = '🚽 厕所避难中';
-  }, 2000);
 }
 
 function updateBossAI() {
+  if (state.isInMeeting) return;
   const bossEl = document.getElementById('boss');
-  let speed = 0.04;
+  let isAfternoonRush = state.timeMinutes >= 15 * 60;
+  let speed = isAfternoonRush ? 0.055 : 0.038;
+  if (state.suspicion > 60) speed += 0.015;
+
   bossPos.top += (bossTarget.top - bossPos.top) * speed;
   bossPos.left += (bossTarget.left - bossPos.left) * speed;
   bossEl.style.top = bossPos.top + 'px';
   bossEl.style.left = bossPos.left + 'px';
 
   let distToPlayer = Math.hypot(bossPos.top - POSITIONS.playerDesk.top, bossPos.left - POSITIONS.playerDesk.left);
-  if (distToPlayer < 65 && !state.isUnderInspection && bossTarget === POSITIONS.playerDesk) {
+  
+  if (distToPlayer < 65 && !state.isUnderInspection && !state.isUnderStare && bossTarget === POSITIONS.playerDesk) {
     startBossInspection();
     setTimeout(() => {
-      if (!state.turnBackTriggered && Math.random() < 0.4) {
+      let turnBackChance = state.suspicion > 50 ? 0.65 : 0.35;
+      if (!state.turnBackTriggered && Math.random() < turnBackChance) {
         state.turnBackTriggered = true;
         bossTarget = POSITIONS.water;
         setTimeout(() => {
-          showFloatingText('王总突然折返!(回马枪)');
+          showFloatingText('王总突然折返!(回马枪突袭)');
           bossTarget = POSITIONS.playerDesk;
-        }, 2000);
+        }, 1600);
       } else {
-        bossTarget = [POSITIONS.bossRoom, POSITIONS.deskLi, POSITIONS.deskMei, POSITIONS.water][Math.floor(Math.random()*4)];
+        state.turnBackTriggered = false;
+        const spots = [POSITIONS.bossRoom, POSITIONS.deskLi, POSITIONS.deskMei, POSITIONS.water];
+        bossTarget = spots[Math.floor(Math.random() * spots.length)];
       }
-    }, 2000);
+    }, 1800);
   }
 
   let distToTarget = Math.hypot(bossPos.top - bossTarget.top, bossPos.left - bossTarget.left);
   if (distToTarget < 10 && bossTarget !== POSITIONS.playerDesk) {
     setTimeout(() => {
-      if (Math.random() < 0.35) {
+      let inspectProb = state.suspicion > 50 ? 0.6 : 0.35;
+      if (Math.random() < inspectProb) {
         bossTarget = POSITIONS.playerDesk;
-        document.getElementById('boss-state-text').innerText = '巡查中👀';
+        document.getElementById('boss-state-text').innerText = '盯梢中👀';
+        document.getElementById('boss-icon').innerText = '🧐';
       } else {
         const spots = [POSITIONS.bossRoom, POSITIONS.deskLi, POSITIONS.deskMei, POSITIONS.water];
         bossTarget = spots[Math.floor(Math.random() * spots.length)];
         document.getElementById('boss-state-text').innerText = '巡逻中';
+        document.getElementById('boss-icon').innerText = '👔';
       }
-    }, 1500);
+    }, 1200);
   }
 }
 
 let gameLoopInterval = setInterval(() => {
   if (state.isPaused || state.gameOver) return;
+
   state.timeMinutes += 1;
   let h = Math.floor(state.timeMinutes / 60);
   let m = state.timeMinutes % 60;
   document.getElementById('game-clock').innerText = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 
+  if (state.milkTeaBuffTimer > 0) state.milkTeaBuffTimer -= 0.1;
+
   if (state.currentAction === 'work') {
-    let eff = state.spirit > 30 ? 0.8 : 0.35;
+    let eff = (state.spirit > 25 ? 0.62 : 0.22) * state.workEfficiencyBonus;
     state.workProgress = Math.min(100, state.workProgress + eff);
-    state.spirit = Math.max(0, state.spirit - 0.25);
-    state.suspicion = Math.max(0, state.suspicion - 0.08);
-    state.workSeconds += 1;
+    let drain = state.milkTeaBuffTimer > 0 ? 0.18 : 0.35;
+    state.spirit = Math.max(0, state.spirit - drain);
+    state.suspicion = Math.max(0, state.suspicion - 0.06);
   } else if (state.currentAction === 'phone') {
-    state.spirit = Math.min(100, state.spirit + 0.3);
-    state.fishIncome += 0.8;
-    state.fishSeconds += 1;
+    state.spirit = Math.min(100, state.spirit + 0.28);
+    state.fishIncome += 0.7;
   } else if (state.currentAction === 'game') {
-    state.spirit = Math.min(100, state.spirit + 0.5);
-    state.fishIncome += 1.8;
-    state.fishSeconds += 1;
+    state.spirit = Math.min(100, state.spirit + 0.45);
+    state.fishIncome += 1.6;
   } else if (state.currentAction === 'toilet') {
-    state.spirit = Math.min(100, state.spirit + 0.4);
-    state.fishIncome += 1.2 * state.toiletBonus;
-    state.toiletSeconds += 1;
-  } else if (state.currentAction === 'chat') {
+    state.toiletSecondsInRow += 0.1;
+    let secLeft = Math.max(0, state.maxSafeToiletSec - state.toiletSecondsInRow);
+    document.getElementById('toilet-stay-time').innerText = `(${secLeft.toFixed(1)}s)`;
+    if (state.toiletSecondsInRow > state.maxSafeToiletSec) {
+      document.getElementById('toilet-stay-time').innerText = `⚠️已超时!`;
+      state.suspicion = Math.min(100, state.suspicion + 0.3);
+    }
     state.spirit = Math.min(100, state.spirit + 0.35);
-    state.fishIncome += 0.6;
-    state.fishSeconds += 1;
+    state.fishIncome += 0.9;
+  } else if (state.currentAction === 'chat') {
+    state.spirit = Math.min(100, state.spirit + 0.3);
+    state.fishIncome += 0.5;
   }
 
   if (state.timeMinutes === 12 * 60) triggerSkillPick();
-  if (state.timeMinutes === 14 * 60 + 30) triggerEvent();
+
+  EVENT_POOL.forEach(ev => {
+    if (state.timeMinutes === ev.triggerTime) triggerCustomEvent(ev);
+  });
+
+  if (state.timeMinutes === 16 * 60 + 30 && state.workProgress < 50) {
+    showFloatingText('⚠️ 老板大吼: "销售报表怎么还没过半?!" 怀疑度+25%');
+    state.suspicion = Math.min(100, state.suspicion + 25);
+    playBusted();
+  }
+
   if (state.timeMinutes >= 18 * 60) triggerSettlement();
 
   updateBossAI();
@@ -508,42 +728,49 @@ function updateUI() {
   document.getElementById('fish-num').innerText = '¥' + state.fishIncome.toFixed(1);
 }
 
-function triggerEvent() {
+function triggerCustomEvent(ev) {
   state.isPaused = true;
+  playEventSound();
   const modal = document.getElementById('event-modal');
-  const opts = document.getElementById('event-options');
-  opts.innerHTML = `
-    <button class="choice-btn" onclick="resolveEvent(1)">🧋 喝！(精神+20, 摸鱼+15)</button>
-    <button class="choice-btn" onclick="resolveEvent(2)">❌ 不了，减肥 (怀疑度-5%)</button>
-    <button class="choice-btn" onclick="resolveEvent(3)">🤝 帮老板点一杯 (老板好感+, 金币-10)</button>
-  `;
-  modal.style.display = 'flex';
-}
+  document.getElementById('event-tag').innerText = ev.tag;
+  document.getElementById('event-title').innerText = ev.title;
+  document.getElementById('event-desc').innerText = ev.desc;
 
-function resolveEvent(choice) {
-  if (choice === 1) { state.spirit = Math.min(100, state.spirit + 20); state.fishIncome += 15; }
-  else if (choice === 2) { state.suspicion = Math.max(0, state.suspicion - 5); }
-  else if (choice === 3) { state.suspicion = Math.max(0, state.suspicion - 15); }
-  document.getElementById('event-modal').style.display = 'none';
-  state.isPaused = false;
+  const opts = document.getElementById('event-options');
+  opts.innerHTML = '';
+  ev.options.forEach((opt, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'event-btn';
+    btn.innerHTML = `<span>${opt.text}</span><span class="event-btn-sub">${opt.sub}</span>`;
+    btn.onclick = () => {
+      opt.effect(state);
+      modal.style.display = 'none';
+      state.isPaused = false;
+      updateUI();
+    };
+    opts.appendChild(btn);
+  });
+
+  modal.style.display = 'flex';
 }
 
 function triggerSkillPick() {
   state.isPaused = true;
+  playEventSound();
   const modal = document.getElementById('skill-modal');
   const opts = document.getElementById('skill-options');
   opts.innerHTML = `
-    <button class="choice-btn" onclick="resolveSkill(1)">⌨️ 熟练 ALT+TAB (反应时间提升至 2.0s)</button>
-    <button class="choice-btn" onclick="resolveSkill(2)">🖥️ 防窥膜 (被抓怀疑增长减少 35%)</button>
-    <button class="choice-btn" onclick="resolveSkill(3)">🚽 厕所战神 (厕所摸鱼收益 +50%)</button>
+    <button class="choice-btn" onclick="resolveSkill(1)">⌨️ 熟练 ALT+TAB (反应时间提升至 1.65s)</button>
+    <button class="choice-btn" onclick="resolveSkill(2)">🚀 Deadline爆肝 (工作效率 +25%)</button>
+    <button class="choice-btn" onclick="resolveSkill(3)">🛡️ 防窥膜 (被抓罚款与怀疑度增长 -40%)</button>
   `;
   modal.style.display = 'flex';
 }
 
 function resolveSkill(choice) {
-  if (choice === 1) { state.reactionTime = 2.0; showFloatingText('技能已生效: 反应时间+0.5s'); }
-  else if (choice === 2) { state.antiPeekRate = 0.35; showFloatingText('技能已生效: 防窥屏被抓保护'); }
-  else if (choice === 3) { state.toiletBonus = 1.5; showFloatingText('技能已生效: 厕所战神收益UP'); }
+  if (choice === 1) { state.reactionTime = 1.65; showFloatingText('技能生效: 反应时间提升至1.65s'); }
+  else if (choice === 2) { state.workEfficiencyBonus = 1.25; showFloatingText('技能生效: 工作效率大幅提升!'); }
+  else if (choice === 3) { state.antiPeekRate = 0.4; showFloatingText('技能生效: 防窥膜保护'); }
   document.getElementById('skill-modal').style.display = 'none';
   state.isPaused = false;
 }
@@ -552,21 +779,35 @@ function triggerSettlement() {
   state.gameOver = true;
   const modal = document.getElementById('result-modal');
   let rank = 'C';
-  let title = '《老实打工人》';
-  if (state.workProgress >= 100) {
-    if (state.fishIncome > 180 && state.suspicion < 30) { rank = 'SSS'; title = '《老板眼皮底下的神》'; }
-    else if (state.fishIncome > 120) { rank = 'SS'; title = '《公司最稳定的混子》'; }
-    else { rank = 'S'; title = '《带薪摸鱼熟练工》'; }
-  } else if (state.workProgress >= 80) {
-    rank = 'A'; title = '《还算会混》';
+  let title = '《真实打工人》';
+
+  if (state.workProgress < 80) {
+    rank = 'D (不及格)';
+    title = '《绩效不达标·扣除全奖金》';
+    state.fishIncome = 0;
+    document.getElementById('settle-header').innerText = '❌ 工作未达标 (绩效警告+1)';
+  } else if (state.workProgress >= 100) {
+    if (state.fishIncome >= 140 && state.caughtCount === 0) {
+      rank = 'SSS'; title = '《老板眼皮底下的神》';
+    } else if (state.fishIncome >= 90) {
+      rank = 'SS'; title = '《公司最稳定的混子》';
+    } else {
+      rank = 'S'; title = '《带薪摸鱼熟练工》';
+    }
+  } else {
+    rank = 'A'; title = '《勉强交差的摸鱼客》';
+    state.fishIncome *= 0.7;
   }
+
   document.getElementById('report-rank').innerText = rank;
   document.getElementById('report-title').innerText = title;
   document.getElementById('report-income').innerText = '¥' + state.fishIncome.toFixed(2);
   document.getElementById('rep-work').innerText = Math.round(state.workProgress) + '%';
-  document.getElementById('rep-fish').innerText = Math.round(state.fishSeconds * 6 / 60) + '小时' + (state.fishSeconds * 6 % 60) + '分';
-  document.getElementById('rep-toilet').innerText = Math.round(state.toiletSeconds * 6) + '分钟';
+  document.getElementById('rep-caught').innerText = state.caughtCount + ' 次';
+  document.getElementById('rep-penalty').innerText = '-¥' + state.totalFined.toFixed(1);
   document.getElementById('rep-suspicion').innerText = Math.round(state.suspicion) + '%';
+  document.getElementById('rep-achieve').innerText = state.achievements.length > 0 ? state.achievements.join(", ") : "无";
+
   modal.style.display = 'flex';
 }
 
