@@ -75,16 +75,66 @@
     } catch {}
   }
 
-  function resetGame() {
-    const dev = new URLSearchParams(location.search).get("dev") === "1";
-    const duration = dev ? 90 : 480;
+  function levelXpRequirement(level) { return level <= 1 ? 16 : Math.floor(15 + level * 7 + Math.pow(level, 1.35)); }
+  function createPlayer(dev) {
+    const base = { maxHp: dev ? 500 : 120, speed: 195, damageMul: 1, attackSpeed: 1, crit: .05, size: 1, armor: 0, pickup: 82 };
+    return { x: 1200, y: 800, r: 19, hp: base.maxHp, maxHp: base.maxHp, speed: base.speed, invuln: 0, level: 1, xp: 0,
+      nextXp: levelXpRequirement(1), pickup: base.pickup, damageMul: base.damageMul, attackSpeed: base.attackSpeed, crit: base.crit,
+      size: base.size, armor: base.armor, base, runtime: { damage: 1, speed: 1 }, weapons: { yarn: 1 }, passives: {}, passiveWeights: {}, devices: {} };
+  }
+  function recalculatePlayerStats({ healDelta = false } = {}) {
+    const p = state.player; if (!p) return;
+    p.base ||= { maxHp: p.maxHp || 120, speed: p.speed || 195, damageMul: 1, attackSpeed: 1, crit: .05, size: 1, armor: 0, pickup: 82 };
+    p.runtime ||= { damage: 1, speed: 1 }; p.passiveWeights ||= {};
+    const w = id => Number.isFinite(p.passiveWeights[id]) ? p.passiveWeights[id] : (p.passives[id] || 0);
+    const oldMax = p.maxHp || p.base.maxHp, oldHp = Number.isFinite(p.hp) ? p.hp : oldMax;
+    p.maxHp = Math.max(1, p.base.maxHp + 22 * w("health"));
+    p.speed = Math.max(1, p.base.speed * Math.pow(1.10, w("speed")) * p.runtime.speed);
+    p.damageMul = Math.max(.01, p.base.damageMul * Math.pow(1.18, w("power")) * p.runtime.damage);
+    p.attackSpeed = Math.max(.05, p.base.attackSpeed * Math.pow(1.14, w("haste")));
+    p.pickup = Math.max(1, p.base.pickup + 38 * w("magnet"));
+    p.crit = clamp(p.base.crit + .08 * w("crit"), 0, 1);
+    p.size = Math.max(.1, p.base.size * Math.pow(1.15, w("size")));
+    p.armor = clamp(p.base.armor + .08 * w("armor"), 0, .9);
+    p.hp = clamp(oldHp + (healDelta ? Math.max(0, p.maxHp - oldMax) : 0), 0, p.maxHp);
+  }
+  function setPassiveLevel(id, level, weight = level, healDelta = false) {
+    const data = PASSIVES[id], p = state.player; if (!data || !p) return;
+    const lv = clamp(Math.round(level), 0, data.max);
+    if (lv) { p.passives[id] = lv; p.passiveWeights[id] = Math.max(0, weight); }
+    else { delete p.passives[id]; delete p.passiveWeights[id]; }
+    recalculatePlayerStats({ healDelta }); updateDock(); updateHud();
+  }
+  function syncTurretDevice() {
+    const level = state.player?.devices?.turret || 0;
+    const turrets = state.devices.filter(d => d.kind === "turret");
+    if (!level) state.devices = state.devices.filter(d => d.kind !== "turret");
+    else if (!turrets.length) deployTurret();
+    else { turrets[0].level = level; state.devices = state.devices.filter((d, i) => d.kind !== "turret" || i === state.devices.indexOf(turrets[0])); }
+  }
+  function setDeviceLevel(id, level) {
+    const data = DEVICES[id], p = state.player; if (!data || !p) return;
+    const lv = clamp(Math.round(level), 0, data.max); if (lv) p.devices[id] = lv; else delete p.devices[id];
+    if (id === "turret") syncTurretDevice();
+    if (id === "trap" && !lv) state.devices = state.devices.filter(d => d.kind !== "trap");
+    updateDock();
+  }
+  function setWeaponLevel(id, level) {
+    const data = WEAPONS[id], p = state.player; if (!data || !p) return;
+    const lv = clamp(Math.round(level), 0, data.max); if (lv) p.weapons[id] = lv; else delete p.weapons[id]; updateDock();
+  }
+
+  function resetGame(devOverride = null) {
+    const queryDev = new URLSearchParams(location.search).get("dev") === "1";
+    const dev = devOverride === null ? queryDev : Boolean(devOverride);
+    const duration = 480;
     state = {
       dev,
-      mode: "upgrade", started: false, duration, time: 0, lastSpawn: 0, shake: 0, flash: 0, kills: 0, elites: 0,
+      mode: dev ? "playing" : "upgrade", started: dev, duration, time: 0, lastSpawn: 0, shake: 0, flash: 0, kills: 0, elites: 0,
       damage: 0, taken: 0, highHit: 0, coins: 0, pendingLevels: 0, rerolls: 2, bossSpawned: false, won: false,
+      simSpeed: 1, devLabOpen: false, devRunPaused: dev, invincible: false, infiniteRerolls: false, fps: 0, damageBuckets: [],
       schedules: { chest1: false, chest2: false, merchant: false, event: false, elite1: false, elite2: false },
-      player: { x: 1200, y: 800, r: 19, hp: dev ? 400 : 120, maxHp: dev ? 400 : 120, speed: 195, invuln: 0, level: 1, xp: 0, nextXp: 16,
-        pickup: 82, damageMul: dev ? 3.5 : 1, attackSpeed: dev ? 1.35 : 1, crit: .05, size: 1, armor: dev ? .25 : 0, weapons: { yarn: 1 }, passives: {}, devices: {} },
+      player: createPlayer(dev),
       enemies: [], projectiles: [], enemyShots: [], pickups: [], particles: [], texts: [], hazards: [], devices: [], landmarks: [], boss: null,
       timers: { yarn: 0, fish: 0, laser: 0, paw: 0, trap: 2, turret: 0 }, cam: { x: 1200, y: 800 }
     };
@@ -92,8 +142,8 @@
     ui.menu.classList.add("hidden"); ui.result.classList.add("hidden"); ui.hud.classList.remove("hidden"); ui.joystick.classList.remove("hidden");
     ui.bossHud.classList.add("hidden");
     updateDock(); updateHud();
-    toast(dev ? "开发快速模式 · 90 秒" : "开局祝福 · 先选一个能力", 2200);
-    openUpgrade(true);
+    toast(dev ? "DEV MODE · 测试资源不会写入正式存档" : "开局祝福 · 先选一个能力", 2200);
+    if (dev) window.dispatchEvent(new CustomEvent("meow-dev-started")); else openUpgrade(true);
   }
 
   function makeMap() {
@@ -146,22 +196,15 @@
   }
   function openUpgrade(initial = false) {
     state.mode = "upgrade"; state.initialUpgrade = initial; ui.rerolls.textContent = state.rerolls;
-    $("rerollButton").disabled = state.rerolls <= 0; renderUpgradeChoices(); ui.upgrade.classList.remove("hidden"); sound("level");
+    $("rerollButton").disabled = state.rerolls <= 0 && !state.infiniteRerolls; renderUpgradeChoices(); ui.upgrade.classList.remove("hidden"); sound("level");
   }
   function applyUpgrade(c) {
     const p = state.player, factor = c.rarity === "epic" ? 1.5 : c.rarity === "rare" ? 1.25 : 1;
-    if (c.type === "weapon") p.weapons[c.id] = c.level;
-    if (c.type === "device") { p.devices[c.id] = c.level; if (c.id === "turret" && c.level === 1) deployTurret(); }
+    if (c.type === "weapon") setWeaponLevel(c.id, c.level);
+    if (c.type === "device") setDeviceLevel(c.id, c.level);
     if (c.type === "passive") {
-      p.passives[c.id] = c.level;
-      if (c.id === "power") p.damageMul *= 1 + .18 * factor;
-      if (c.id === "haste") p.attackSpeed *= 1 + .14 * factor;
-      if (c.id === "health") { p.maxHp += 22 * factor; p.hp += 22 * factor; }
-      if (c.id === "speed") p.speed *= 1 + .10 * factor;
-      if (c.id === "magnet") p.pickup += 38 * factor;
-      if (c.id === "crit") p.crit += .08 * factor;
-      if (c.id === "size") p.size *= 1 + .15 * factor;
-      if (c.id === "armor") p.armor = clamp(p.armor + .08 * factor, 0, .55);
+      const oldWeight = p.passiveWeights[c.id] || 0;
+      setPassiveLevel(c.id, c.level, oldWeight + factor, c.id === "health");
     }
     ui.upgrade.classList.add("hidden"); updateDock();
     if (state.pendingLevels > 0) { state.pendingLevels--; setTimeout(() => openUpgrade(false), 120); }
@@ -213,12 +256,12 @@
   function pushFrom(e, source, amount) { const a = Math.atan2(e.y - source.y, e.x - source.x); e.x += Math.cos(a) * amount; e.y += Math.sin(a) * amount; }
 
   const ENEMY_TYPES = {
-    mouse: { hp: 28, speed: 67, damage: 9, r: 15, xp: 3, color: "#9b8a91", icon: "mouse" },
-    bug: { hp: 20, speed: 93, damage: 8, r: 12, xp: 3, color: "#70554d", icon: "bug" },
-    hedgehog: { hp: 78, speed: 39, damage: 15, r: 20, xp: 7, color: "#9a6949", icon: "hedgehog" },
-    bee: { hp: 34, speed: 54, damage: 10, r: 14, xp: 5, color: "#f0be43", icon: "bee", ranged: true },
-    frog: { hp: 48, speed: 49, damage: 12, r: 17, xp: 6, color: "#71ac63", icon: "frog", ranged: true },
-    snail: { hp: 92, speed: 30, damage: 17, r: 22, xp: 8, color: "#78a2b5", icon: "snail" }
+    mouse: { name: "灰灰鼠", emoji: "🐭", hp: 28, speed: 67, damage: 9, r: 15, xp: 3, color: "#9b8a91", icon: "mouse" },
+    bug: { name: "花园甲虫", emoji: "🪲", hp: 20, speed: 93, damage: 8, r: 12, xp: 3, color: "#70554d", icon: "bug" },
+    hedgehog: { name: "刺球先锋", emoji: "🦔", hp: 78, speed: 39, damage: 15, r: 20, xp: 7, color: "#9a6949", icon: "hedgehog" },
+    bee: { name: "巡逻蜜蜂", emoji: "🐝", hp: 34, speed: 54, damage: 10, r: 14, xp: 5, color: "#f0be43", icon: "bee", ranged: true },
+    frog: { name: "泡泡蛙", emoji: "🐸", hp: 48, speed: 49, damage: 12, r: 17, xp: 6, color: "#71ac63", icon: "frog", ranged: true },
+    snail: { name: "铁壳蜗牛", emoji: "🐌", hp: 92, speed: 30, damage: 17, r: 22, xp: 8, color: "#78a2b5", icon: "snail" }
   };
   function spawnEnemy(type, elite = false) {
     const p = state.player, ang = rand(0, TAU), radius = Math.max(viewW, viewH) * .65 + rand(80, 180), data = ENEMY_TYPES[type];
@@ -250,9 +293,15 @@
     state.enemies = state.enemies.filter(e => !e.dead || e.death > 0);
   }
   function enemyShot(x, y, a, kind, damage) { const speed = kind === "glob" ? 150 : 235; state.enemyShots.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: kind === "glob" ? 9 : 5, life: 4, damage, kind }); }
+  function recordDamage(amount) {
+    const stamp = Math.floor(state.time * 4) / 4, buckets = state.damageBuckets;
+    const lastBucket = buckets[buckets.length - 1];
+    if (lastBucket && lastBucket.t === stamp) lastBucket.amount += amount; else buckets.push({ t: stamp, amount });
+    while (buckets.length && buckets[0].t < state.time - 10.25) buckets.shift();
+  }
   function hitEnemy(e, raw, kind) {
     if (!e || e.dead) return; const crit = Math.random() < state.player.crit, dmg = raw * (crit ? 1.85 : 1);
-    e.hp -= dmg; state.damage += dmg; state.highHit = Math.max(state.highHit, dmg); textPop(e.x, e.y - e.r, Math.round(dmg), crit ? "#ffcf58" : "#fff", crit ? 18 : 12);
+    e.hp -= dmg; state.damage += dmg; recordDamage(dmg); state.highHit = Math.max(state.highHit, dmg); textPop(e.x, e.y - e.r, Math.round(dmg), crit ? "#ffcf58" : "#fff", crit ? 18 : 12);
     if (kind === "laser" && Math.random() < .25) e.slow = .35;
     if (e.hp <= 0) killEnemy(e);
   }
@@ -262,7 +311,8 @@
       state.coins += 80;
       burst(e.x, e.y, "#ffe37a", 40, 140);
       toast("🏆 暴走扫地机停止运转！", 2600);
-      setTimeout(() => endGame(true), 1800);
+      ui.bossHud.classList.add("hidden");
+      if (!state.dev) setTimeout(() => endGame(true), 1800);
       return;
     }
     const count = e.elite ? 4 : 1; for (let i = 0; i < count; i++) state.pickups.push({ kind: "xp", x: e.x + rand(-12,12), y: e.y + rand(-12,12), value: e.xp / count, r: e.elite ? 8 : 5 });
@@ -271,16 +321,18 @@
     burst(e.x, e.y, e.color, e.elite ? 18 : 6, e.elite ? 80 : 35);
   }
   function hurtPlayer(raw, sx, sy) {
-    const p = state.player; if (p.invuln > 0 || state.mode !== "playing") return;
+    const p = state.player; if (state.invincible || p.invuln > 0 || state.mode !== "playing") return;
     const dmg = Math.max(1, raw * (1 - p.armor)); p.hp -= dmg; p.invuln = .62; state.taken += dmg; state.shake = 8; state.flash = .15; sound("hurt"); textPop(p.x, p.y - 30, `-${Math.round(dmg)}`, "#ff7c78", 17); pushFrom(p, { x: sx, y: sy }, 20);
     if (p.hp <= 0) endGame(false);
   }
 
   function spawnBoss() {
+    if (state.boss && !state.boss.dead) return state.boss;
     state.bossSpawned = true; state.enemies.length = Math.min(state.enemies.length, 18); const p = state.player;
     const bossHp = state.dev ? 1200 : 3200;
     state.boss = { x: clamp(p.x + 360, 80, 2320), y: clamp(p.y, 100, 1500), r: 46, hp: bossHp, maxHp: bossHp, damage: 20, speed: 50, phase: 1, attack: 1.5, summon: 5, dead: false, kind: "boss" };
     ui.bossHud.classList.remove("hidden"); ui.bossName.textContent = "暴走扫地机 · 第一阶段"; toast("⚠️ Boss 登场：暴走扫地机！", 3000); sound("boss"); state.shake = 14;
+    return state.boss;
   }
   function updateBoss(dt) {
     const b = state.boss; if (!b || b.dead) return; const p = state.player, d = dist(b,p), a = Math.atan2(p.y-b.y,p.x-b.x);
@@ -329,7 +381,7 @@
     }
     state.pickups=state.pickups.filter(o=>!o.dead);
   }
-  function checkLevel(){const p=state.player;while(p.xp>=p.nextXp){p.xp-=p.nextXp;p.level++;p.nextXp=Math.floor(15+p.level*7+Math.pow(p.level,1.35));state.pendingLevels++;}if(state.pendingLevels>0&&state.mode==="playing"){state.pendingLevels--;openUpgrade(false);}}
+  function checkLevel(){const p=state.player;while(p.xp>=p.nextXp){p.xp-=p.nextXp;p.level++;p.nextXp=levelXpRequirement(p.level);state.pendingLevels++;}if(state.pendingLevels>0&&state.mode==="playing"){state.pendingLevels--;openUpgrade(false);}}
   function spawnObject(kind, label){const p=state.player,a=rand(0,TAU),r=rand(260,420);state.pickups.push({kind,x:clamp(p.x+Math.cos(a)*r,80,2320),y:clamp(p.y+Math.sin(a)*r,80,1520),r:22,label});toast(`${label} 已出现在附近`,2400);}
 
   function schedules() {
@@ -344,14 +396,14 @@
   }
 
   function openShop(){state.mode="shop";ui.shop.classList.remove("hidden");ui.shopCoins.textContent=Math.floor(state.coins);const pool=chooseUpgrades().slice(0,3);pool.push({type:"heal",id:"heal",name:"暖呼呼牛奶",icon:"🥛",desc:"恢复 45% 最大生命",level:1,rarity:"common"});ui.shopChoices.innerHTML="";pool.forEach((c,i)=>{const price=18+i*10,b=document.createElement("button");b.className=`upgrade-card ${c.rarity||""}`;b.innerHTML=`<span class="upgrade-icon">${c.icon}</span><h3>${c.name}</h3><p>${c.desc}</p><span class="price">🪙 ${price}</span>`;b.onclick=()=>{if(state.coins<price){toast("猫币不够喵！");return;}state.coins-=price;if(c.type==="heal")state.player.hp=Math.min(state.player.maxHp,state.player.hp+state.player.maxHp*.45);else applyShopUpgrade(c);b.disabled=true;b.style.opacity=.45;ui.shopCoins.textContent=Math.floor(state.coins);};ui.shopChoices.appendChild(b);});}
-  function applyShopUpgrade(c){const old=state.mode;state.mode="shop";if(c.type==="weapon")state.player.weapons[c.id]=c.level;if(c.type==="device"){state.player.devices[c.id]=c.level;if(c.id==="turret"&&c.level===1)deployTurret();}if(c.type==="passive"){const fake={...c,rarity:"common"};state.mode="upgrade";applyUpgrade(fake);state.mode=old;ui.upgrade.classList.add("hidden");}updateDock();}
+  function applyShopUpgrade(c){const old=state.mode;state.mode="shop";if(c.type==="weapon")setWeaponLevel(c.id,c.level);if(c.type==="device")setDeviceLevel(c.id,c.level);if(c.type==="passive"){const fake={...c,rarity:"common"};state.mode="upgrade";applyUpgrade(fake);state.mode=old;ui.upgrade.classList.add("hidden");}updateDock();}
   function closeShop(){ui.shop.classList.add("hidden");state.mode="playing";}
   function openEvent(){state.mode="event";ui.event.classList.remove("hidden");}
-  function resolveEvent(choice){const p=state.player;if(choice==="help"){p.hp=Math.min(p.maxHp,p.hp+p.maxHp*.35);p.speed*=1.12;toast("小蜜蜂送你顺风花粉：移速提升！");}else{p.hp=Math.max(1,p.hp*.75);p.damageMul*=1.25;toast("甜蜜的代价：伤害大幅提升！");}ui.event.classList.add("hidden");state.mode="playing";}
+  function resolveEvent(choice){const p=state.player;if(choice==="help"){p.hp=Math.min(p.maxHp,p.hp+p.maxHp*.35);p.runtime.speed*=1.12;recalculatePlayerStats();toast("小蜜蜂送你顺风花粉：移速提升！");}else{p.hp=Math.max(1,p.hp*.75);p.runtime.damage*=1.25;recalculatePlayerStats();toast("甜蜜的代价：伤害大幅提升！");}ui.event.classList.add("hidden");state.mode="playing";}
 
   function movePlayer(dt){const p=state.player;let x=0,y=0;if(keys.has("KeyA")||keys.has("ArrowLeft"))x--;if(keys.has("KeyD")||keys.has("ArrowRight"))x++;if(keys.has("KeyW")||keys.has("ArrowUp"))y--;if(keys.has("KeyS")||keys.has("ArrowDown"))y++;x+=joy.x;y+=joy.y;const len=Math.hypot(x,y);if(len>.05){x/=Math.max(1,len);y/=Math.max(1,len);p.x=clamp(p.x+x*p.speed*dt,25,2375);p.y=clamp(p.y+y*p.speed*dt,25,1575);p.walk=(p.walk||0)+dt*10;}p.invuln=Math.max(0,p.invuln-dt);}
   function phase(){const t=state.time/state.duration;if(state.bossSpawned)return"最终决战";if(t<.25)return"快速成型";if(t<.62)return"中压构筑";return"高压怪潮";}
-  function update(dt){if(state.mode!=="playing")return;state.time+=dt;if(state.time>=state.duration+35&&!state.boss)endGame(false);movePlayer(dt);attack(dt);spawnTick(dt);updateEnemies(dt);updateBoss(dt);updateProjectiles(dt);updatePickups(dt);schedules();updateFx(dt);state.cam.x=lerp(state.cam.x,state.player.x,.08);state.cam.y=lerp(state.cam.y,state.player.y,.08);state.shake=Math.max(0,state.shake-dt*30);state.flash=Math.max(0,state.flash-dt);updateHud();}
+  function update(dt){if(state.mode!=="playing"||(state.dev&&state.devLabOpen&&state.devRunPaused))return;state.time+=dt;if(!state.dev&&state.time>=state.duration+35&&!state.boss)endGame(false);movePlayer(dt);attack(dt);spawnTick(dt);updateEnemies(dt);updateBoss(dt);updateProjectiles(dt);updatePickups(dt);if(!state.dev)schedules();updateFx(dt);state.cam.x=lerp(state.cam.x,state.player.x,.08);state.cam.y=lerp(state.cam.y,state.player.y,.08);state.shake=Math.max(0,state.shake-dt*30);state.flash=Math.max(0,state.flash-dt);updateHud();}
   function updateFx(dt){for(const p of state.particles){p.life-=dt;if(p.vx){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=.94;p.vy*=.94;}}state.particles=state.particles.filter(p=>p.life>0);for(const t of state.texts){t.life-=dt;t.y-=28*dt;}state.texts=state.texts.filter(t=>t.life>0);}
   function textPop(x,y,text,color="#fff",size=12){state.texts.push({x,y,text,color,size,life:.75,max:.75});}
 
@@ -360,7 +412,7 @@
   function buildSummary(){const p=state.player,items=[];Object.entries(p.weapons).forEach(([id,lv])=>items.push([WEAPONS[id].icon+" "+WEAPONS[id].name,"Lv."+lv]));Object.entries(p.devices).forEach(([id,lv])=>items.push([DEVICES[id].icon+" "+DEVICES[id].name,"Lv."+lv]));Object.entries(p.passives).forEach(([id,lv])=>items.push([PASSIVES[id].icon+" "+PASSIVES[id].name,"Lv."+lv]));return items;}
   function pause(){if(state.mode!=="playing")return;state.mode="paused";ui.build.innerHTML=buildSummary().map(x=>`<div class="build-item"><b>${x[0]}</b>${x[1]}</div>`).join("")||"还没有额外强化";ui.pause.classList.remove("hidden");}
   function resume(){if(state.mode!=="paused")return;ui.pause.classList.add("hidden");state.mode="playing";last=performance.now();}
-  function endGame(win){if(state.mode==="result")return;state.mode="result";state.won=win;ui.hud.classList.add("hidden");ui.joystick.classList.add("hidden");ui.pause.classList.add("hidden");const survived=Math.min(state.time,state.duration);profile.best=Math.max(profile.best,Math.floor(survived));const reward=Math.floor(state.coins*(win?1:.45)+state.kills*.08+(win?80:0));profile.coins+=reward;if(win)profile.wins++;saveProfile();$("resultBadge").textContent=win?"🏆":"🐾";$("resultKicker").textContent=win?"冒险完成":"本次冒险结束";$("resultTitle").textContent=win?"庭院恢复平静！":"差一点就成功了！";$("resultLine").textContent=win?"“喵！今天的罐头可以安心吃啦。”":"保留成长，拍拍爪子马上再来。";$("resultStats").innerHTML=[["存活",fmt(survived)],["击败",state.kills],["最高伤害",Math.round(state.highHit)],["获得猫币",reward]].map(x=>`<div class="stat"><b>${x[1]}</b><small>${x[0]}</small></div>`).join("");$("resultBuild").innerHTML=buildSummary().map(x=>`<span>${x[0]} ${x[1]}</span>`).join("");ui.result.classList.remove("hidden");if(win)sound("win");}
+  function endGame(win){if(state.mode==="result")return;state.mode="result";state.won=win;ui.hud.classList.add("hidden");ui.joystick.classList.add("hidden");ui.pause.classList.add("hidden");const survived=Math.min(state.time,state.duration);const reward=Math.floor(state.coins*(win?1:.45)+state.kills*.08+(win?80:0));if(!state.dev){profile.best=Math.max(profile.best,Math.floor(survived));profile.coins+=reward;if(win)profile.wins++;saveProfile();}$("resultBadge").textContent=win?"🏆":"🐾";$("resultKicker").textContent=win?"冒险完成":"本次冒险结束";$("resultTitle").textContent=win?"庭院恢复平静！":"差一点就成功了！";$("resultLine").textContent=state.dev?"DEV 测试数据未写入正式存档。":win?"“喵！今天的罐头可以安心吃啦。”":"保留成长，拍拍爪子马上再来。";$("resultStats").innerHTML=[["存活",fmt(survived)],["击败",state.kills],["最高伤害",Math.round(state.highHit)],["获得猫币",reward]].map(x=>`<div class="stat"><b>${x[1]}</b><small>${x[0]}</small></div>`).join("");$("resultBuild").innerHTML=buildSummary().map(x=>`<span>${x[0]} ${x[1]}</span>`).join("");ui.result.classList.remove("hidden");window.dispatchEvent(new CustomEvent("meow-run-ended"));if(win)sound("win");}
 
   function worldToScreen(x,y){return{x:x-state.cam.x+viewW/2,y:y-state.cam.y+viewH/2};}
   function draw(){ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,viewW,viewH);if(!state.player){drawMenuBg();return;}const sx=state.shake?rand(-state.shake,state.shake):0,sy=state.shake?rand(-state.shake,state.shake):0;ctx.save();ctx.translate(sx,sy);drawGround();drawLandmarks();drawHazards();drawPickups();drawDevices();drawEntities();drawProjectiles();drawParticles();ctx.restore();if(state.flash>0){ctx.fillStyle=`rgba(255,75,70,${state.flash*.8})`;ctx.fillRect(0,0,viewW,viewH);}}
@@ -386,14 +438,115 @@
   function roundRect(x,y,w,h,r,fill=false){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill)ctx.fill();}
   function iconText(t,x,y,color,size){ctx.fillStyle=color;ctx.font=`${size}px "Segoe UI Emoji",sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(t,x,y);ctx.textBaseline="alphabetic";}
 
-  function loop(now){const dt=Math.min(.033,(now-last)/1000);last=now;update(dt);draw();requestAnimationFrame(loop);}requestAnimationFrame(loop);
+  function closeGameplayOverlays() {
+    [ui.upgrade, ui.shop, ui.event, ui.pause].forEach(el => el.classList.add("hidden"));
+  }
+  function setPlayerLevel(level) {
+    const p = state.player; if (!p) return;
+    p.level = clamp(Math.round(Number(level) || 1), 1, 999); p.xp = 0; p.nextXp = levelXpRequirement(p.level); state.pendingLevels = 0; updateHud();
+  }
+  function setPlayerValue(key, value) {
+    const p = state.player; if (!p) return; const n = Number(value); if (!Number.isFinite(n)) return;
+    if (key === "level") return setPlayerLevel(n);
+    if (key === "hp") { p.hp = clamp(n, 0, p.maxHp); updateHud(); return; }
+    if (key === "coins") { state.coins = Math.max(0, n); updateHud(); return; }
+    if (key === "rerolls") { state.rerolls = Math.max(0, Math.round(n)); ui.rerolls.textContent = state.rerolls; return; }
+    if (!["maxHp","speed","damageMul","attackSpeed","crit","armor","pickup"].includes(key)) return;
+    const minimum = ["maxHp","speed","damageMul","attackSpeed","pickup"].includes(key) ? .01 : 0;
+    p.base[key] = Math.max(minimum, n); recalculatePlayerStats(); updateHud();
+  }
+  function healFull() { if (state.player) { state.player.hp = state.player.maxHp; updateHud(); } }
+  function spawnMixed(count) { const ids = Object.keys(ENEMY_TYPES); for (let i = 0; i < count; i++) spawnEnemy(pick(ids)); }
+  function spawnEnemyBatch(type, count, elite = false) { if (!ENEMY_TYPES[type]) return; for (let i = 0; i < count; i++) spawnEnemy(type, elite); }
+  function clearNormalEnemies() { state.enemies = []; }
+  function clearAllEnemies() { state.enemies = []; state.boss = null; state.bossSpawned = false; ui.bossHud.classList.add("hidden"); }
+  function clearBattlefield() {
+    clearAllEnemies(); state.projectiles = []; state.enemyShots = []; state.hazards = []; state.pickups = []; state.devices = [];
+    state.particles = []; state.texts = []; if (state.player?.devices?.turret) syncTurretDevice();
+  }
+  function forceBossPhase2() {
+    const b = spawnBoss(); b.hp = Math.min(b.hp, b.maxHp * .47); b.phase = 2; b.speed = 72;
+    ui.bossName.textContent = "暴走扫地机 · 狂暴清扫"; updateHud(); return b;
+  }
+  function setBossHealth(percent) {
+    const b = spawnBoss(), ratio = clamp(Number(percent) || 0, .001, 1); b.hp = b.maxHp * ratio;
+    if (ratio < .48) forceBossPhase2(); else { b.phase = 1; b.speed = 50; ui.bossName.textContent = "暴走扫地机 · 第一阶段"; }
+    updateHud();
+  }
+  function killBossForTest() { const b = spawnBoss(); hitEnemy(b, b.hp + 1, "dev"); }
+  function markSchedulesForFraction(fraction) {
+    state.schedules.chest1 = fraction >= .2; state.schedules.elite1 = fraction >= .29; state.schedules.merchant = fraction >= .4;
+    state.schedules.chest2 = fraction >= .54; state.schedules.event = fraction >= .62; state.schedules.elite2 = fraction >= .7;
+  }
+  function setStage(fraction, boss = false) {
+    const f = clamp(fraction, 0, .99); state.time = state.duration * f; markSchedulesForFraction(f); state.lastSpawn = 0;
+    if (boss) spawnBoss(); updateHud();
+  }
+  function triggerChest() { state.coins += 25; state.pendingLevels++; toast("DEV 宝箱：猫币 +25，并获得一次强化！"); state.pendingLevels--; openUpgrade(false); }
+  function triggerEliteWave() { for (let i = 0; i < 8; i++) spawnEnemy(pick(Object.keys(ENEMY_TYPES)), true); toast("DEV：精英潮已生成"); }
+  function resetDevPlayer() {
+    const old = state.player, pos = old ? { x: old.x, y: old.y } : { x: 1200, y: 800 };
+    state.player = createPlayer(true); state.player.x = pos.x; state.player.y = pos.y; state.devices = [];
+    state.timers = { yarn: 0, fish: 0, laser: 0, paw: 0, trap: 2, turret: 0 }; updateDock(); updateHud();
+  }
+  function applyLevelMaps({ weapons = {}, passives = {}, devices = {} } = {}) {
+    Object.keys(WEAPONS).forEach(id => setWeaponLevel(id, weapons[id] || 0));
+    Object.keys(PASSIVES).forEach(id => setPassiveLevel(id, passives[id] || 0));
+    Object.keys(DEVICES).forEach(id => setDeviceLevel(id, devices[id] || 0));
+  }
+  function preparePreset(fraction, level) {
+    clearBattlefield(); resetDevPlayer(); state.damage = 0; state.taken = 0; state.highHit = 0; state.kills = 0; state.damageBuckets = [];
+    state.coins = 200; state.rerolls = 9; setPlayerLevel(level); setStage(fraction); state.player.hp = state.player.maxHp;
+  }
+  function applyPreset(name) {
+    if (!state.dev) return;
+    if (name === "early") { preparePreset(.1, 4); applyLevelMaps({ weapons:{yarn:2}, passives:{power:1,speed:1} }); spawnMixed(10); }
+    if (name === "mid") { preparePreset(.4, 13); applyLevelMaps({ weapons:{yarn:4,fish:3,laser:2}, passives:{power:2,haste:2,health:1,magnet:1}, devices:{turret:2} }); spawnMixed(38); }
+    if (name === "late") { preparePreset(.75, 26); applyLevelMaps({ weapons:{yarn:6,fish:5,laser:5,paw:4}, passives:{power:3,haste:3,health:2,speed:2,crit:2,size:2,armor:2}, devices:{turret:3,trap:3} }); spawnMixed(85); }
+    if (name === "boss") { preparePreset(.84, 25); applyLevelMaps({ weapons:{yarn:5,fish:5,laser:4,paw:4}, passives:{power:3,haste:2,health:2,crit:2,armor:2}, devices:{turret:3,trap:2} }); state.player.hp=state.player.maxHp; spawnBoss(); }
+    if (name === "max") { preparePreset(.75, 40); applyLevelMaps({ weapons:Object.fromEntries(Object.keys(WEAPONS).map(id=>[id,WEAPONS[id].max])), passives:Object.fromEntries(Object.keys(PASSIVES).map(id=>[id,PASSIVES[id].max])), devices:Object.fromEntries(Object.keys(DEVICES).map(id=>[id,DEVICES[id].max])) }); healFull(); }
+    if (name === "stress") { preparePreset(.75, 45); state.player.base.maxHp=1000;state.player.base.damageMul=3;state.player.base.attackSpeed=1.8;state.player.base.armor=.55;recalculatePlayerStats();applyLevelMaps({ weapons:Object.fromEntries(Object.keys(WEAPONS).map(id=>[id,WEAPONS[id].max])), passives:Object.fromEntries(Object.keys(PASSIVES).map(id=>[id,PASSIVES[id].max])), devices:Object.fromEntries(Object.keys(DEVICES).map(id=>[id,DEVICES[id].max])) });healFull();spawnMixed(150); }
+    updateDock(); updateHud(); toast(`PRESET: ${name.toUpperCase()}`);
+  }
+  function getBuildSnapshot() {
+    const p = state.player; return { version:1, base:{...p.base}, hp:p.hp, level:p.level, xp:p.xp, weapons:{...p.weapons}, passives:{...p.passives}, passiveWeights:{...p.passiveWeights}, devices:{...p.devices}, coins:state.coins, rerolls:state.rerolls };
+  }
+  function loadBuildSnapshot(data) {
+    if (!data || typeof data !== "object") throw new Error("Build 必须是 JSON 对象");
+    const pos = { x:state.player.x, y:state.player.y }; resetDevPlayer(); const p = state.player; p.x=pos.x;p.y=pos.y;
+    if (data.base && typeof data.base === "object") for (const key of ["maxHp","speed","damageMul","attackSpeed","crit","size","armor","pickup"]) if (Number.isFinite(Number(data.base[key]))) p.base[key]=Number(data.base[key]);
+    setPlayerLevel(data.level || 1); p.xp=clamp(Number(data.xp)||0,0,p.nextXp-1);
+    Object.keys(WEAPONS).forEach(id=>setWeaponLevel(id,Number(data.weapons?.[id])||0));
+    Object.keys(PASSIVES).forEach(id=>setPassiveLevel(id,Number(data.passives?.[id])||0,Number(data.passiveWeights?.[id])||Number(data.passives?.[id])||0));
+    Object.keys(DEVICES).forEach(id=>setDeviceLevel(id,Number(data.devices?.[id])||0));
+    recalculatePlayerStats(); p.hp=clamp(Number.isFinite(Number(data.hp))?Number(data.hp):p.maxHp,0,p.maxHp);
+    state.coins=Math.max(0,Number(data.coins)||0);state.rerolls=Math.max(0,Math.round(Number(data.rerolls)||0));updateDock();updateHud();
+  }
+  function getDevStats() {
+    const now=state.time,b=state.damageBuckets||[],one=b.reduce((s,x)=>s+(x.t>=now-1?x.amount:0),0),ten=b.reduce((s,x)=>s+(x.t>=now-10?x.amount:0),0);
+    return { fps:state.fps||0,enemies:state.enemies.filter(e=>!e.dead).length+(state.boss&&!state.boss.dead?1:0),projectiles:state.projectiles.length,enemyShots:state.enemyShots.length,pickups:state.pickups.length,level:state.player.level,kills:state.kills,damage:state.damage,taken:state.taken,highHit:state.highHit,dps:one,dps10:ten/10 };
+  }
+  function setDevLabOpen(open) { if (!state.dev) return; state.devLabOpen=Boolean(open);state.devRunPaused=Boolean(open); }
+  function setDevPaused(paused) { state.devRunPaused=Boolean(paused);if(!paused&&state.mode!=="playing"){closeGameplayOverlays();state.mode="playing";} }
 
-  $("startButton").onclick=()=>{sound("coin");resetGame();};
+  const devApi = {
+    setLabOpen:setDevLabOpen,setPaused:setDevPaused,setSpeed:v=>state.simSpeed=clamp(Number(v)||1,.5,4),setInvincible:v=>state.invincible=Boolean(v),setInfiniteRerolls:v=>state.infiniteRerolls=Boolean(v),
+    setPlayerValue,healFull,addLevels:n=>setPlayerLevel(state.player.level+n),setWeaponLevel,setPassiveLevel,setDeviceLevel,
+    spawnEnemy:spawnEnemyBatch,spawnMixed,clearNormalEnemies,clearAllEnemies,spawnBoss,forceBossPhase2,setBossHealth,killBoss:killBossForTest,
+    openUpgrade:()=>openUpgrade(false),openShop,triggerChest,openEvent,triggerEliteWave,setStage,
+    applyPreset,getStats:getDevStats,getBuild:getBuildSnapshot,loadBuild:loadBuildSnapshot,resetPlayer:resetDevPlayer,resetRun:()=>resetGame(true),clearBattlefield,
+    getConfig:()=>({WEAPONS,PASSIVES,DEVICES,ENEMY_TYPES}),getState:()=>state
+  };
+
+  function loop(now){const rawDt=Math.min(.05,(now-last)/1000);last=now;if(state.player)state.fps=lerp(state.fps||1,1/Math.max(.001,rawDt),.08);update(rawDt*(state.simSpeed||1));draw();requestAnimationFrame(loop);}requestAnimationFrame(loop);
+
+  $("startButton").onclick=()=>{sound("coin");resetGame(false);};
+  $("devStartButton").onclick=()=>{sound("coin");resetGame(true);};
   $("howButton").onclick=()=>ui.how.classList.remove("hidden");document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>$(b.dataset.close).classList.add("hidden"));
-  $("rerollButton").onclick=()=>{if(state.rerolls<=0)return;state.rerolls--;ui.rerolls.textContent=state.rerolls;renderUpgradeChoices();};
+  $("rerollButton").onclick=()=>{if(state.rerolls<=0&&!state.infiniteRerolls)return;if(!state.infiniteRerolls)state.rerolls--;ui.rerolls.textContent=state.rerolls;renderUpgradeChoices();};
   $("leaveShop").onclick=closeShop;document.querySelectorAll("[data-event]").forEach(b=>b.onclick=()=>resolveEvent(b.dataset.event));
   $("pauseButton").onclick=pause;$("resumeButton").onclick=resume;$("quitButton").onclick=()=>endGame(false);
-  $("againButton").onclick=resetGame;$("menuButton").onclick=()=>{state={mode:"menu"};ui.result.classList.add("hidden");ui.menu.classList.remove("hidden");};
+  $("againButton").onclick=()=>resetGame(Boolean(state.dev));$("menuButton").onclick=()=>{state={mode:"menu"};ui.result.classList.add("hidden");ui.menu.classList.remove("hidden");window.dispatchEvent(new CustomEvent("meow-dev-ended"));};
   addEventListener("keydown",e=>{keys.add(e.code);if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code))e.preventDefault();if((e.code==="Escape"||e.code==="KeyP")&&!e.repeat){state.mode==="playing"?pause():state.mode==="paused"&&resume();}});
   addEventListener("keyup",e=>keys.delete(e.code));
   ui.joystick.addEventListener("pointerdown",e=>{joy.active=true;joy.id=e.pointerId;ui.joystick.setPointerCapture(e.pointerId);moveJoy(e);});
@@ -402,5 +555,6 @@
   function moveJoy(e){const r=ui.joystick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,len=Math.hypot(dx,dy),m=Math.min(1,len/43);joy.x=len?dx/len*m:0;joy.y=len?dy/len*m:0;const knob=ui.joystick.firstElementChild;knob.style.transform=`translate(${joy.x*34}px,${joy.y*34}px)`;}
   function endJoy(){joy.active=false;joy.x=joy.y=0;ui.joystick.firstElementChild.style.transform="";}
 
-  window.__MEOW_GAME__ = { getState:()=>state, start:resetGame, end:(win=true)=>endGame(win) };
+  window.__MEOW_GAME__ = { getState:()=>state, start:resetGame, end:(win=true)=>endGame(win), dev:devApi, data:{WEAPONS,PASSIVES,DEVICES,ENEMY_TYPES} };
+  if (new URLSearchParams(location.search).get("dev") === "1") resetGame(true);
 })();

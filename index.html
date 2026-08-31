@@ -28,6 +28,7 @@
         </div>
         <div class="menu-actions">
           <button id="startButton" class="primary">开始冒险</button>
+          <button id="devStartButton" class="dev-entry">开发测试</button>
           <button id="howButton" class="secondary">玩法说明</button>
         </div>
         <div class="profile-strip">
@@ -127,8 +128,17 @@
     </div>
 
     <div id="joystick" class="joystick hidden"><div></div></div>
+    <button id="devToggle" class="dev-toggle hidden" aria-controls="devLab" aria-expanded="false">DEV ⚙</button>
+    <aside id="devLab" class="dev-lab hidden" aria-label="开发者测试台">
+      <header class="dev-header">
+        <div><small>DEVELOPER TOOLS</small><strong>DEV LAB</strong></div>
+        <button id="devClose" aria-label="关闭开发者测试台">×</button>
+      </header>
+      <div id="devLabContent" class="dev-content"></div>
+    </aside>
     <div id="rotateNotice">旋转设备可获得更宽视野</div>
   </main>
   <script src="game.js"></script>
+  <script src="devtools.js"></script>
 </body>
 </html>
