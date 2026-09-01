@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#e9dfc9" />
   <title>喵勇者：墨韵庭院</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%23efe6d2'/%3E%3Cpath d='M18 20 24 8l8 10 8-10 7 13c7 14-1 31-15 31S11 35 18 20Z' fill='%23d88336' stroke='%231d211d' stroke-width='5'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=1.3" />
 </head>
 <body>
   <main id="app">
@@ -17,24 +17,45 @@
 
     <section id="menu" class="screen active">
       <div class="menu-ink"></div>
-      <div class="brand-card ink-panel">
-        <div class="brand-copy">
-          <p class="eyebrow">动漫水墨动作肉鸽 · P0 纵向切片</p>
-          <h1><span>喵勇者</span><small>墨韵庭院</small></h1>
-          <p class="subtitle">踏入旧庭，以鱼骨墨针、流叶回锋、爪痕剑气与铃线追魂，击散失控的墨灵怪潮。</p>
-          <div class="seal-row"><span>自动瞄准</span><span>移动走位</span><span>七级终极</span></div>
+      <div class="home-shell">
+        <header class="home-brand">
+          <div class="logo-lockup"><h1><span>墨影喵行</span></h1><div class="logo-sub"><i></i><b>水墨动作 Roguelike</b><i></i></div><em>喵隐旧庭</em></div>
+          <div class="profile-coins" aria-label="庭院铜钱"><span>钱</span><b id="profileCoins">0</b></div>
+        </header>
+
+        <div class="home-actions">
+          <button id="startButton" class="home-big-action primary-home"><span class="paw-mark">爪</span><b>开始冒险</b><small>踏入墨韵旧庭 · 八分钟试炼</small></button>
+          <button id="devStartButton" class="home-big-action dev-home"><span class="paw-mark">试</span><b>开发测试</b><small>直接进入 DEV LAB 调试战斗</small></button>
+          <div class="home-nav" aria-label="功能入口">
+            <button class="home-nav-item" disabled title="后续版本开放"><span>侠</span><b>角色</b></button>
+            <button class="home-nav-item" disabled title="后续版本开放"><span>芽</span><b>成长</b></button>
+            <button class="home-nav-item" disabled title="武器在战斗升级与开发测试中配置"><span>刃</span><b>武器</b></button>
+            <button id="howButton" class="home-nav-item"><span>卷</span><b>图鉴</b></button>
+          </div>
+          <div class="save-card ink-panel">
+            <div class="save-thumb" aria-hidden="true"></div>
+            <div><small>庭院行迹</small><b>第一章 · 竹庭试炼</b><span>最高存活 <strong id="bestTime">00:00</strong></span></div>
+          </div>
         </div>
-        <div class="hero-showcase">
-          <img src="assets/art/hero-balanced.png" alt="均衡型橘猫侠客" />
-          <div class="brush-name"><b>小橘侠</b><small>均衡型 · 万金油</small></div>
+
+        <div class="home-hero" aria-label="当前角色小橘侠">
+          <div class="hero-ink-ring"></div>
+          <img src="assets/art/hero-balanced.png" alt="水墨 Q 版橘猫侠客小橘侠" />
+          <div class="hero-caption"><b>小橘侠</b><small>均衡型 · 灵活机动</small></div>
         </div>
-        <div class="selection-grid">
-          <button class="select-card selected" data-select="hero"><span class="stamp">侠</span><span><b>均衡型 · 小橘侠</b><small>6 武器槽 · 2 固定装置槽</small></span></button>
-          <button class="select-card selected" data-select="map"><span class="stamp teal">庭</span><span><b>墨韵旧庭</b><small>教学地图 · 青碧点色</small></span></button>
-        </div>
-        <div class="menu-actions"><button id="startButton" class="primary">挥笔入阵</button><button id="howButton" class="secondary">玩法说明</button><button id="devStartButton" class="dev-entry">开发测试</button></div>
-        <div class="profile-strip"><span>最高存活 <b id="bestTime">00:00</b></span><span>庭院铜钱 <b id="profileCoins">0</b></span></div>
-        <p class="controls-hint">电脑：WASD / 方向键移动 · 手机：拖动左下摇杆 · P / Esc 暂停</p>
+
+        <aside class="character-scroll ink-panel">
+          <div class="scroll-heading"><span>均</span><b>小橘侠</b><em>主角</em></div>
+          <div class="scroll-level"><b>Lv.1</b><span>初入旧庭</span></div>
+          <div class="scroll-progress"><i></i></div>
+          <p>定位：均衡输出</p><p>特点：灵活机动，可应对多种战斗局面。</p>
+          <h3>十二武器</h3>
+          <div class="scroll-skills" aria-label="代表武器"><span>鱼</span><span>叶</span><span>爪</span><span>墨</span></div>
+          <h3>基础属性</h3>
+          <div class="scroll-stats"><span>生命 <b>120</b></span><span>移速 <b>195</b></span><span>暴击 <b>5%</b></span><span>武器槽 <b>6</b></span></div>
+        </aside>
+
+        <p class="home-footnote">单机离线 · 无需联网　|　电脑 WASD / 方向键　|　手机拖动摇杆</p>
       </div>
     </section>
 
@@ -73,8 +94,8 @@
     <aside id="devLab" class="dev-lab hidden" aria-label="开发者测试台"><header class="dev-header"><div><small>DEVELOPER TOOLS</small><strong>INK COMBAT LAB</strong></div><button id="devClose" aria-label="关闭开发者测试台">×</button></header><div id="devLabContent" class="dev-content"></div></aside>
     <div id="rotateNotice">横屏可获得更宽的庭院视野</div>
   </main>
-  <script src="game-data.js"></script>
-  <script src="game.js"></script>
-  <script src="devtools.js"></script>
+  <script src="game-data.js?v=1.3"></script>
+  <script src="game.js?v=1.3"></script>
+  <script src="devtools.js?v=1.3"></script>
 </body>
 </html>
