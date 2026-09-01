@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220">
+  <defs>
+    <filter id="rough" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence baseFrequency=".018" numOctaves="2" seed="8" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="1.8"/></filter>
+    <linearGradient id="fur" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#f6aa45"/><stop offset="1" stop-color="#c86b27"/></linearGradient>
+  </defs>
+  <g filter="url(#rough)" stroke="#1d211d" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M166 126c38-8 45 21 22 34-12 7-22 1-29-4" fill="none" stroke="#c86b27" stroke-width="16"/>
+    <path d="M70 121c-18 16-22 48-11 68h37l14-31 13 31h38c10-23 5-52-14-68z" fill="#242826"/>
+    <path d="M73 145l-14 43m85-42l18 42" fill="none"/>
+    <path d="M71 45L85 16l22 24m43 5l-5-29-27 23" fill="url(#fur)"/>
+    <path d="M68 52c9-25 67-31 83 2 17 36-6 74-40 76-34 1-57-40-43-78z" fill="url(#fur)"/>
+    <path d="M82 61l12-8m4 5l7-14m21 13l-6-13m11 18l10-7" fill="none" stroke-width="4"/>
+    <path d="M78 91c13 17 49 20 65 0-1 25-17 37-34 37-17 0-29-12-31-37z" fill="#f8ead2" stroke="none"/>
+    <path d="M88 79q8-9 16 0m15 0q8-9 16 0" fill="none" stroke-width="5"/>
+    <path d="M106 91l6 2-5 5z" fill="#b8422f" stroke-width="3"/>
+    <path d="M78 118c19 14 57 14 78-1l13 21c-25 11-72 10-102-2z" fill="#b8422f"/>
+    <path d="M155 120c24-7 38-18 54-10-8 8-17 15-30 21 11 1 18 5 25 12-17 4-31-1-45-8" fill="#b8422f"/>
+    <path d="M81 126l-13 33m79-34l12 35" fill="none" stroke="#d88937" stroke-width="14"/>
+    <path d="M82 132l-9 14m72-14l10 14" fill="none" stroke="#356f69" stroke-width="5"/>
+    <path d="M83 159h52l-5 31H89z" fill="#356f69"/>
+    <path d="M94 156v34m29-34v34" fill="none" stroke-width="4"/>
+    <path d="M62 189h40m17 0h47" fill="none" stroke-width="10"/>
+    <path d="M79 107l-20 3m22 6l-21 5m77-13l20 1m-19 9l20 5" fill="none" stroke-width="3"/>
+  </g>
+</svg>
