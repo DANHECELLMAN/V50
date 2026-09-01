@@ -2,7 +2,7 @@
   "use strict";
 
   const $ = id => document.getElementById(id);
-  const { WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES, BOSS, CHARACTER } = window.MEOW_DATA;
+  const { WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, LEGACY_ASSET_MAP, INK_FX } = window.MEOW_DATA;
   const world = $("world");
   const scene = $("gameScene");
   const damageFlash = $("damageFlash");
@@ -15,6 +15,18 @@
   const pick = array => array[(Math.random() * array.length) | 0];
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const fmt = seconds => `${String((seconds / 60) | 0).padStart(2, "0")}:${String(seconds % 60 | 0).padStart(2, "0")}`;
+  const fxMeta = id => INK_FX?.[id] || INK_FX?.FX_001 || { visual: "brush-slash", maxParticles: 10 };
+  const fxClass = id => `fx-${fxMeta(id).visual}`;
+  const imageMarkup = (resource, alt = "") => `<img src="${resource.art}" data-fallback="${resource.fallback_art || resource.legacy_art || ""}" alt="${alt}" draggable="false">`;
+  function setArtImage(image, resource, alt = "") {
+    if (!image || !resource) return;
+    image.alt = alt; image.dataset.fallback = resource.fallback_art || resource.legacy_art || ""; image.dataset.fallbackUsed = ""; image.src = resource.art;
+  }
+  document.addEventListener("error", event => {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement) || !image.dataset.fallback || image.dataset.fallbackUsed === "1") return;
+    image.dataset.fallbackUsed = "1"; image.src = image.dataset.fallback;
+  }, true);
 
   const ui = {
     menu: $("menu"), how: $("howPanel"), upgrade: $("upgradePanel"), shop: $("shopPanel"), event: $("eventPanel"),
@@ -32,6 +44,35 @@
   const saveProfile = () => { localStorage.setItem("meowGardenProfile", JSON.stringify(profile)); syncProfile(); };
   const syncProfile = () => { $("profileCoins").textContent = profile.coins; $("bestTime").textContent = fmt(profile.best); };
   syncProfile();
+
+  let homeCharacterKey = "moxiaobai";
+  const characterMark = key => ({ moxiaobai: "均", chihen: "九", qingyan: "召" }[key] || "侠");
+  function renderHomeCharacter(key = homeCharacterKey) {
+    const character = CHARACTERS[key] || CHARACTER; homeCharacterKey = character.key;
+    const ready = character.status === "ready", start = $("startButton");
+    $("homeHero").dataset.character = character.key; $("homeHero").setAttribute("aria-label", `当前角色${character.name}`);
+    setArtImage($("homeHeroImage"), character, `Q版动漫水墨猫侠${character.name}`);
+    $("heroCaptionName").textContent = character.name; $("heroCaptionRole").textContent = character.role.replace(" / ", " · ");
+    $("homeCharacterMark").textContent = characterMark(character.key); $("homeCharacterName").textContent = character.name; $("homeCharacterStatus").textContent = character.status_text;
+    $("homeCharacterRole").textContent = character.role; $("homeCharacterSummary").textContent = character.summary;
+    $("homeCharacterTraits").innerHTML = character.traits.slice(0, 4).map(trait => `<span>${trait}</span>`).join("");
+    $("homeStatHp").textContent = character.base_stats.maxHp; $("homeStatSpeed").textContent = character.base_stats.speed; $("homeStatCrit").textContent = `${Math.round(character.base_stats.crit * 100)}%`; $("homeStatWeapons").textContent = character.slot_rules.weapon;
+    start.disabled = !ready; start.classList.toggle("locked-home", !ready); start.querySelector("b").textContent = ready ? "开始冒险" : `${character.name}开发中`; start.querySelector("small").textContent = ready ? "踏入墨韵旧庭 · 八分钟试炼" : "请在角色卷中选择墨小白出战";
+  }
+  function renderCharacterChoices() {
+    $("characterChoices").innerHTML = Object.values(CHARACTERS).map(character => `<button class="character-choice ${character.palette} ${character.status !== "ready" ? "is-development" : ""}" data-character="${character.key}"><span class="character-choice-art">${imageMarkup(character, character.name)}</span><span class="character-choice-copy"><small>${character.status_text}</small><b>${character.name}</b><em>${character.role}</em><p>${character.summary}</p><span>${character.traits.slice(0, 3).join(" · ")}</span></span></button>`).join("");
+    $("characterChoices").querySelectorAll("[data-character]").forEach(button => button.onclick = () => { renderHomeCharacter(button.dataset.character); $("characterPanel").classList.add("hidden"); });
+  }
+  function showInfo(type) {
+    const titles = { growth: ["成长", "成长树兼容接口"], weapons: ["武器 / Build", "十二道水墨兵势"], settings: ["设置", "游戏设置"], save: ["存档", "庭院行迹"] };
+    const [kicker, title] = titles[type] || ["庭院卷册", "功能信息"]; $("infoKicker").textContent = kicker; $("infoTitle").textContent = title;
+    if (type === "weapons") $("infoBody").innerHTML = `<div class="weapon-catalog">${Object.values(WEAPONS).map(weapon => `<article><span>${weapon.icon}</span><div><b>${weapon.name}</b><small>${weapon.tags}</small><p>${weapon.desc}</p></div></article>`).join("")}</div>`;
+    else if (type === "growth") $("infoBody").innerHTML = `<div class="paper-message"><b>成长树将在后续阶段开放</b><p>本轮已经为三名角色预留武器、装置、召唤槽与专属机制配置；当前不会新增未经策划确认的成长节点。</p></div>`;
+    else if (type === "settings") $("infoBody").innerHTML = `<div class="paper-message"><b>基础设置</b><p>电脑使用 WASD / 方向键移动，P 或 Esc 暂停；手机使用左下摇杆。动画会遵循系统“减少动态效果”设置。</p><p>当前 Demo 为单机离线版本，不包含账号、联网大厅或商城。</p></div>`;
+    else $("infoBody").innerHTML = `<div class="save-info"><div><small>累计铜钱</small><b>${profile.coins}</b></div><div><small>最高存活</small><b>${fmt(profile.best)}</b></div><div><small>通关次数</small><b>${profile.wins}</b></div></div><p class="panel-note">正式进度保存在当前浏览器的 localStorage；DEV 测试数据不会写入正式记录。</p>`;
+    $("infoPanel").classList.remove("hidden");
+  }
+  renderCharacterChoices(); renderHomeCharacter();
 
   let state = { mode: "menu" };
   let viewW = innerWidth;
@@ -134,11 +175,12 @@
       pendingLevels: 0, rerolls: 2, bossSpawned: false, won: false, simSpeed: 1, devLabOpen: false,
       devRunPaused: dev, invincible: false, infiniteRerolls: false, fps: 0, damageBuckets: [],
       schedules: { chest1: false, chest2: false, merchant: false, event: false, elite1: false, elite2: false },
-      player: createPlayer(dev), enemies: [], projectiles: [], enemyShots: [], pickups: [], particles: [], texts: [], hazards: [], devices: [], boss: null,
+      character: CHARACTER, player: createPlayer(dev), enemies: [], projectiles: [], enemyShots: [], pickups: [], particles: [], texts: [], hazards: [], devices: [], boss: null,
       playerZones: [], weaponPulses: [], orbiters: [], weaponDamage: {},
       timers: { ...Object.fromEntries(Object.keys(WEAPONS).map(id => [id, 0])), trap: 2, turret: 0 }, cam: { x: WORLD_W / 2, y: WORLD_H / 2 }
     };
     clearWorldNodes();
+    $("hudHeroName").textContent = state.character.name; setArtImage($("hudHeroImage"), state.character, state.character.name);
     ui.menu.classList.add("hidden"); ui.result.classList.add("hidden"); ui.hud.classList.remove("hidden"); ui.joystick.classList.remove("hidden"); ui.bossHud.classList.add("hidden");
     updateDock(); updateHud();
     toast(dev ? "DEV MODE · 测试数据不会写入正式存档" : "开局墨意 · 先选一道笔势", 2200);
@@ -155,9 +197,10 @@
   }
   function upgradePool() {
     const player = state.player, pool = [], weaponCount = Object.keys(player.weapons).length, deviceCount = Object.keys(player.devices).length;
-    Object.entries(WEAPONS).forEach(([id, data]) => { const level = player.weapons[id] || 0; if (level < data.max && (level > 0 || weaponCount < CHARACTER.slot_rules.weapon)) pool.push({ type: "weapon", id, level: level + 1, ...data }); });
+    const slotRules = state.character?.slot_rules || CHARACTER.slot_rules;
+    Object.entries(WEAPONS).forEach(([id, data]) => { const level = player.weapons[id] || 0; if (level < data.max && (level > 0 || weaponCount < slotRules.weapon)) pool.push({ type: "weapon", id, level: level + 1, ...data }); });
     Object.entries(PASSIVES).forEach(([id, data]) => { const level = player.passives[id] || 0; if (level < data.max) pool.push({ type: "passive", id, level: level + 1, ...data }); });
-    Object.entries(DEVICES).forEach(([id, data]) => { const level = player.devices[id] || 0; if (level < data.max && (level > 0 || deviceCount < CHARACTER.slot_rules.device)) pool.push({ type: "device", id, level: level + 1, ...data }); });
+    Object.entries(DEVICES).forEach(([id, data]) => { const level = player.devices[id] || 0; if (level < data.max && (level > 0 || deviceCount < slotRules.device)) pool.push({ type: "device", id, level: level + 1, ...data }); });
     return pool;
   }
   function chooseUpgrades() {
@@ -217,7 +260,7 @@
       x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: (options.r || 7) * state.player.size,
       damage: options.damage ?? 12, life: options.life ?? ((options.range || speed * 2) / Math.max(1, speed)), color: options.color || "#356f69", pierce: options.pierce || 0,
       bounces: options.bounces || 0, kind: options.kind || "fishbone", hit: new Set(), retention: options.retention ?? 1,
-      weaponId: options.weaponId || null, explodeRadius: options.explodeRadius || 0, childBlasts: options.childBlasts || 0, childDamage: options.childDamage || 0, basePierce: options.pierce || 0,
+      weaponId: options.weaponId || null, fxId: options.fxId || "FX_001", explodeRadius: options.explodeRadius || 0, childBlasts: options.childBlasts || 0, childDamage: options.childDamage || 0, basePierce: options.pierce || 0,
       returnRange: options.returnRange || 0, returnDamage: options.returnDamage ?? 1, originX: x, originY: y, speed
     });
   }
@@ -229,11 +272,11 @@
   function weaponStats(id, level) { const data = WEAPONS[id]; return data?.levels?.[clamp(level | 0, 1, data.max)] || null; }
   function spreadAngle(index, count, degrees = 0) { return count <= 1 ? 0 : (index / (count - 1) - .5) * degrees * Math.PI / 180; }
   function queuePulse(kind, stats, index, weaponId, color) {
-    state.weaponPulses.push({ kind, delay: index * (stats.waveGap || stats.hitGap || 0), x: state.player.x, y: state.player.y, r: stats.range * state.player.size, damage: stats.damage * state.player.damageMul, knockback: stats.knockback || (kind === "claw" ? 38 : 0), slow: stats.slow || 0, color, weaponId });
+    state.weaponPulses.push({ kind, delay: index * (stats.waveGap || stats.hitGap || 0), x: state.player.x, y: state.player.y, r: stats.range * state.player.size, damage: stats.damage * state.player.damageMul, knockback: stats.knockback || (kind === "claw" ? 38 : 0), slow: stats.slow || 0, color, weaponId, fxId: WEAPONS[weaponId]?.fx_id || "FX_001" });
   }
   function createPlayerZone(kind, stats, weaponId, index = 0) {
     const target = nearest(state.player.x, state.player.y, 620), base = target || state.player, angle = index * TAU / Math.max(1, stats.count || 1) + rand(-.3, .3), offset = index ? 48 : 0;
-    const zone = { kind, weaponId, x: clamp(base.x + Math.cos(angle) * offset, 50, WORLD_W - 50), y: clamp(base.y + Math.sin(angle) * offset, 50, WORLD_H - 50), r: stats.range * state.player.size, life: stats.duration, duration: stats.duration, tick: stats.tick || .5, nextTick: 0, damage: stats.damage * state.player.damageMul, slow: stats.slow || 0, endBlast: stats.endBlast || 0 };
+    const zone = { kind, weaponId, fxId: WEAPONS[weaponId]?.fx_id || "FX_005", x: clamp(base.x + Math.cos(angle) * offset, 50, WORLD_W - 50), y: clamp(base.y + Math.sin(angle) * offset, 50, WORLD_H - 50), r: stats.range * state.player.size, life: stats.duration, duration: stats.duration, tick: stats.tick || .5, nextTick: 0, damage: stats.damage * state.player.damageMul, slow: stats.slow || 0, endBlast: stats.endBlast || 0 };
     state.playerZones.push(zone);
     const same = state.playerZones.filter(item => item.kind === kind);
     while (same.length > (stats.maxZones || stats.count || 1)) { const oldest = same.shift(); state.playerZones.splice(state.playerZones.indexOf(oldest), 1); }
@@ -241,13 +284,13 @@
   function attackProjectile(id, data, stats) {
     const player = state.player, target = nearest(player.x, player.y, stats.range); if (!target) return false;
     const aim = Math.atan2(target.y - player.y, target.x - player.x);
-    for (let index = 0; index < stats.count; index++) shootAngle(player.x, player.y, aim + spreadAngle(index, stats.count, stats.spread), { kind: "fishbone", damage: stats.damage * player.damageMul, speed: stats.speed, range: stats.range, r: 7, pierce: stats.pierce, retention: stats.retention, weaponId: data.id });
+    for (let index = 0; index < stats.count; index++) shootAngle(player.x, player.y, aim + spreadAngle(index, stats.count, stats.spread), { kind: "fishbone", damage: stats.damage * player.damageMul, speed: stats.speed, range: stats.range, r: 7, pierce: stats.pierce, retention: stats.retention, weaponId: data.id, fxId: data.fx_id });
     return true;
   }
   function attackBounce(id, data, stats) {
     const player = state.player, target = nearest(player.x, player.y, stats.range); if (!target) return false;
     const aim = Math.atan2(target.y - player.y, target.x - player.x);
-    for (let index = 0; index < stats.count; index++) shootAngle(player.x, player.y, aim + spreadAngle(index, stats.count, stats.spread), { kind: "leaf", color: "#547a58", damage: stats.damage * player.damageMul, speed: stats.speed, range: stats.range, r: 6, bounces: stats.bounce, retention: stats.retention, weaponId: data.id });
+    for (let index = 0; index < stats.count; index++) shootAngle(player.x, player.y, aim + spreadAngle(index, stats.count, stats.spread), { kind: "leaf", color: "#547a58", damage: stats.damage * player.damageMul, speed: stats.speed, range: stats.range, r: 6, bounces: stats.bounce, retention: stats.retention, weaponId: data.id, fxId: data.fx_id });
     return true;
   }
   function attackMelee(id, data, stats) { for (let index = 0; index < stats.count; index++) queuePulse("claw", stats, index, data.id, "#b8422f"); return true; }
@@ -255,14 +298,14 @@
     const used = new Set(); let previous = state.player;
     for (let index = 0; index < stats.count; index++) {
       const target = nearest(previous.x, previous.y, index ? 260 : stats.range, enemy => !used.has(enemy)); if (!target) break;
-      used.add(target); hitEnemy(target, stats.damage * state.player.damageMul, "bell", data.id); beam(previous.x, previous.y, target.x, target.y, "#ad853d"); previous = target;
+      used.add(target); hitEnemy(target, stats.damage * state.player.damageMul, "bell", data.id); beam(previous.x, previous.y, target.x, target.y, "#ad853d", data.fx_id); previous = target;
     }
     return used.size > 0;
   }
   function attackBlast(id, data, stats) {
     const player = state.player, target = nearest(player.x, player.y, stats.range); if (!target) return false;
     const aim = Math.atan2(target.y - player.y, target.x - player.x);
-    for (let index = 0; index < stats.count; index++) shootAngle(player.x, player.y, aim + spreadAngle(index, stats.count, stats.spread), { kind: "inkball", color: "#252823", damage: stats.damage * player.damageMul, speed: stats.speed, range: stats.range, r: 10, explodeRadius: stats.radius * player.size, childBlasts: stats.childBlasts, childDamage: stats.childDamage, weaponId: data.id });
+    for (let index = 0; index < stats.count; index++) shootAngle(player.x, player.y, aim + spreadAngle(index, stats.count, stats.spread), { kind: "inkball", color: "#252823", damage: stats.damage * player.damageMul, speed: stats.speed, range: stats.range, r: 10, explodeRadius: stats.radius * player.size, childBlasts: stats.childBlasts, childDamage: stats.childDamage, weaponId: data.id, fxId: data.fx_id });
     return true;
   }
   function attackZone(id, data, stats) { for (let index = 0; index < stats.count; index++) createPlayerZone(data.behavior === "dot" ? "mist" : "sigil", stats, data.id, index); return true; }
@@ -270,8 +313,8 @@
   function attackChain(id, data, stats) {
     let target = nearest(state.player.x, state.player.y, stats.range), previous = state.player, damage = stats.damage * state.player.damageMul; const used = new Set();
     for (let index = 0; index < stats.chains && target; index++) {
-      used.add(target); hitEnemy(target, damage, "chain", data.id); beam(previous.x, previous.y, target.x, target.y, "#9cbfc2"); previous = target; damage *= stats.retention;
-      if (stats.forkChance && Math.random() < stats.forkChance) { const fork = nearest(previous.x, previous.y, 190, enemy => !used.has(enemy)); if (fork) { used.add(fork); hitEnemy(fork, damage * stats.forkDamage, "chain", data.id); beam(previous.x, previous.y, fork.x, fork.y, "#d8e8df"); } }
+      used.add(target); hitEnemy(target, damage, "chain", data.id); beam(previous.x, previous.y, target.x, target.y, "#9cbfc2", data.fx_id); previous = target; damage *= stats.retention;
+      if (stats.forkChance && Math.random() < stats.forkChance) { const fork = nearest(previous.x, previous.y, 190, enemy => !used.has(enemy)); if (fork) { used.add(fork); hitEnemy(fork, damage * stats.forkDamage, "chain", data.id); beam(previous.x, previous.y, fork.x, fork.y, "#d8e8df", data.fx_id); } }
       target = nearest(previous.x, previous.y, 220, enemy => !used.has(enemy));
     }
     return used.size > 0;
@@ -279,7 +322,7 @@
   function attackReturn(id, data, stats) {
     const player = state.player, target = nearest(player.x, player.y, stats.range); if (!target) return false;
     const aim = Math.atan2(target.y - player.y, target.x - player.x);
-    for (let index = 0; index < stats.count; index++) shootAngle(player.x, player.y, aim + spreadAngle(index, stats.count, stats.spread), { kind: "returnblade", color: "#356f69", damage: stats.damage * player.damageMul, speed: stats.speed, life: 6, r: 8, pierce: stats.pierce, returnRange: stats.range, returnDamage: stats.returnDamage, weaponId: data.id });
+    for (let index = 0; index < stats.count; index++) shootAngle(player.x, player.y, aim + spreadAngle(index, stats.count, stats.spread), { kind: "returnblade", color: "#356f69", damage: stats.damage * player.damageMul, speed: stats.speed, life: 6, r: 8, pierce: stats.pierce, returnRange: stats.range, returnDamage: stats.returnDamage, weaponId: data.id, fxId: data.fx_id });
     return true;
   }
   function updateOrbitWeapon(id, data, stats) {
@@ -330,11 +373,12 @@
     else if (!turret) deployTurret();
     else turret.level = level;
   }
-  function beam(x1, y1, x2, y2, color) { state.particles.push({ kind: "beam", x: x1, y: y1, x2, y2, color, life: .14, max: .14 }); }
-  function burst(x, y, color, count = 10, radius = 55) {
+  function beam(x1, y1, x2, y2, color, fxId = "FX_003") { state.particles.push({ kind: "beam", fxId, visual: fxMeta(fxId).visual, x: x1, y: y1, x2, y2, color, life: .14, max: .14 }); }
+  function burst(x, y, color, count = 10, radius = 55, fxId = "FX_002") {
+    count = Math.min(count, fxMeta(fxId).maxParticles || count);
     for (let index = 0; index < count; index++) {
       const angle = index / count * TAU + rand(-.15, .15);
-      state.particles.push({ kind: "dot", x, y, vx: Math.cos(angle) * rand(radius, radius * 2), vy: Math.sin(angle) * rand(radius, radius * 2), r: rand(2, 5), color, life: .35, max: .35 });
+      state.particles.push({ kind: "dot", fxId, visual: fxMeta(fxId).visual, x, y, vx: Math.cos(angle) * rand(radius, radius * 2), vy: Math.sin(angle) * rand(radius, radius * 2), r: rand(2, 5), color, life: .35, max: .35 });
     }
   }
   function pushFrom(entity, source, amount) {
@@ -408,7 +452,7 @@
     for (let index = 0; index < count; index++) state.pickups.push({ kind: "xp", x: enemy.x + rand(-12, 12), y: enemy.y + rand(-12, 12), value: enemy.xp / count, r: enemy.elite ? 8 : 5 });
     if (Math.random() < (enemy.elite ? .75 : .08)) state.pickups.push({ kind: "coin", x: enemy.x, y: enemy.y, value: enemy.elite ? 18 : pick([1, 2, 3]), r: 7 });
     if (Math.random() < .012) state.pickups.push({ kind: "heart", x: enemy.x, y: enemy.y, value: 14, r: 9 });
-    burst(enemy.x, enemy.y, enemy.elite ? "#b8422f" : "#2a2d29", enemy.elite ? 18 : 7, enemy.elite ? 80 : 36);
+    burst(enemy.x, enemy.y, enemy.elite ? "#b8422f" : "#2a2d29", enemy.elite ? 18 : 7, enemy.elite ? 80 : 36, enemy.death_fx || "FX_006");
   }
   function hurtPlayer(raw, sourceX, sourceY) {
     const player = state.player;
@@ -465,23 +509,23 @@
   function explodeProjectile(projectile) {
     if (projectile.exploded) return; projectile.exploded = true;
     damageArea({ x: projectile.x, y: projectile.y, r: projectile.explodeRadius, damage: projectile.damage, kind: "inkblast", weaponId: projectile.weaponId });
-    burst(projectile.x, projectile.y, "#252823", 14, Math.min(100, projectile.explodeRadius * .6));
+    burst(projectile.x, projectile.y, "#252823", 14, Math.min(100, projectile.explodeRadius * .6), projectile.fxId || "FX_002");
     for (let index = 0; index < projectile.childBlasts; index++) {
       const angle = index / projectile.childBlasts * TAU + rand(-.2, .2), radius = projectile.explodeRadius * .58, x = projectile.x + Math.cos(angle) * radius, y = projectile.y + Math.sin(angle) * radius;
-      damageArea({ x, y, r: projectile.explodeRadius * .46, damage: projectile.damage * projectile.childDamage, kind: "inkblast", weaponId: projectile.weaponId }); burst(x, y, "#6a5146", 7, 40);
+      damageArea({ x, y, r: projectile.explodeRadius * .46, damage: projectile.damage * projectile.childDamage, kind: "inkblast", weaponId: projectile.weaponId }); burst(x, y, "#6a5146", 7, 40, projectile.fxId || "FX_002");
     }
   }
   function updatePlayerWeaponEffects(dt) {
     for (const pulse of state.weaponPulses) {
       pulse.delay -= dt;
       if (pulse.delay > 0 || pulse.fired) continue; pulse.fired = true;
-      damageArea(pulse); state.particles.push({ kind: "claw", x: pulse.x, y: pulse.y, r: pulse.r, color: pulse.color, life: .36, max: .36 });
+      damageArea(pulse); state.particles.push({ kind: "claw", fxId: pulse.fxId, visual: fxMeta(pulse.fxId).visual, x: pulse.x, y: pulse.y, r: pulse.r, color: pulse.color, life: .36, max: .36 });
     }
     state.weaponPulses = state.weaponPulses.filter(pulse => !pulse.fired);
     for (const zone of state.playerZones) {
       zone.life -= dt; zone.nextTick -= dt;
       if (zone.nextTick <= 0 && zone.life > 0) { zone.nextTick += zone.tick; damageArea(zone); }
-      if (zone.life <= 0 && zone.endBlast && !zone.ended) { zone.ended = true; damageArea({ ...zone, r: zone.r * .72, damage: zone.damage * (zone.duration / zone.tick) * zone.endBlast, kind: "sigilburst" }); burst(zone.x, zone.y, "#b8422f", 12, 65); }
+      if (zone.life <= 0 && zone.endBlast && !zone.ended) { zone.ended = true; damageArea({ ...zone, r: zone.r * .72, damage: zone.damage * (zone.duration / zone.tick) * zone.endBlast, kind: "sigilburst" }); burst(zone.x, zone.y, "#b8422f", 12, 65, zone.fxId || "FX_005"); }
     }
     state.playerZones = state.playerZones.filter(zone => zone.life > 0);
   }
@@ -696,23 +740,24 @@
     if (!state.player) return;
 
     const playerId = "player"; active.add(playerId);
-    const playerNode = ensureNode(playerId, `entity player${state.player.moving ? " moving" : ""}${state.player.invuln > 0 ? " invulnerable" : ""}`, `<img src="${CHARACTER.art}" alt="" draggable="false">`);
+    const activeCharacter = state.character || CHARACTER;
+    const playerNode = ensureNode(playerId, `entity player character-${activeCharacter.key}${state.player.moving ? " moving" : ""}${state.player.invuln > 0 ? " invulnerable" : ""}`, imageMarkup(activeCharacter));
     playerNode.style.setProperty("--facing", state.player.facing || 1); place(playerNode, state.player.x, state.player.y);
 
     for (const enemy of state.enemies) {
       const id = objectId(enemy, "enemy"); active.add(id);
       const size = Math.max(48, enemy.r * (enemy.elite ? 4.6 : 4.1));
-      const node = ensureNode(id, `entity enemy ${enemy.art_variant || ""}${enemy.elite ? " elite" : ""}${enemy.dead ? " dying" : ""}`, `<img src="${enemy.art}" alt="" draggable="false">`);
+      const node = ensureNode(id, `entity enemy ${enemy.art_variant || ""}${enemy.elite ? " elite" : ""}${enemy.dead ? " dying" : ""}`, imageMarkup(enemy));
       node.style.width = `${size}px`; node.style.height = `${size}px`; place(node, enemy.x, enemy.y + Math.sin(enemy.phase) * 2);
     }
     if (state.boss && !state.boss.dead) {
       const id = "boss"; active.add(id);
-      const node = ensureNode(id, `entity boss phase-${state.boss.phase}`, `<img src="${BOSS.art}" alt="" draggable="false">`);
+      const node = ensureNode(id, `entity boss phase-${state.boss.phase}`, imageMarkup(BOSS));
       place(node, state.boss.x, state.boss.y);
     }
     for (const projectile of state.projectiles) {
       const id = objectId(projectile, "projectile"); active.add(id);
-      const angle = Math.atan2(projectile.vy, projectile.vx), node = ensureNode(id, `projectile ${projectile.kind}`);
+      const angle = Math.atan2(projectile.vy, projectile.vx), node = ensureNode(id, `projectile ${projectile.kind} ${fxClass(projectile.fxId)}`);
       node.style.width = `${Math.max(10, projectile.r * 2.6)}px`; node.style.height = `${Math.max(7, projectile.r * 1.2)}px`; place(node, projectile.x, projectile.y, 1, angle);
     }
     for (const shot of state.enemyShots) {
@@ -728,7 +773,7 @@
       const id = objectId(device, "device"); active.add(id); const node = ensureNode(id, `device ${device.kind}`, `<span>${device.kind === "turret" ? "刃" : "伞"}</span>`); place(node, device.x, device.y);
     }
     for (const zone of state.playerZones) {
-      const id = objectId(zone, "player-zone"); active.add(id); const node = ensureNode(id, `player-zone ${zone.kind}`);
+      const id = objectId(zone, "player-zone"); active.add(id); const node = ensureNode(id, `player-zone ${zone.kind} ${fxClass(zone.fxId)}`);
       node.style.width = `${zone.r * 2}px`; node.style.height = `${zone.r * 2}px`; node.style.opacity = String(clamp(zone.life / Math.min(.45, zone.duration), 0, 1)); place(node, zone.x, zone.y);
     }
     state.orbiters.forEach((blade, index) => {
@@ -737,12 +782,12 @@
     for (const particle of state.particles) {
       const id = objectId(particle, "particle"); active.add(id);
       if (particle.kind === "beam") {
-        const length = Math.hypot(particle.x2 - particle.x, particle.y2 - particle.y), angle = Math.atan2(particle.y2 - particle.y, particle.x2 - particle.x), node = ensureNode(id, "ink-beam");
+        const length = Math.hypot(particle.x2 - particle.x, particle.y2 - particle.y), angle = Math.atan2(particle.y2 - particle.y, particle.x2 - particle.x), node = ensureNode(id, `ink-beam ${fxClass(particle.fxId)}`);
         node.style.width = `${length}px`; node.style.color = particle.color; node.style.opacity = String(particle.life / particle.max); node.style.transform = `translate3d(${particle.x}px,${particle.y}px,0) rotate(${angle}rad)`;
       } else if (particle.kind === "claw") {
-        const node = ensureNode(id, "claw-wave"); node.style.width = `${particle.r * 2}px`; node.style.height = `${particle.r * 2}px`; node.style.borderColor = particle.color; place(node, particle.x, particle.y);
+        const node = ensureNode(id, `claw-wave ${fxClass(particle.fxId)}`); node.style.width = `${particle.r * 2}px`; node.style.height = `${particle.r * 2}px`; node.style.borderColor = particle.color; place(node, particle.x, particle.y);
       } else {
-        const node = ensureNode(id, "ink-burst"); node.style.width = `${particle.r * 2}px`; node.style.height = `${particle.r * 2}px`; node.style.color = particle.color; node.style.opacity = String(particle.life / particle.max); place(node, particle.x, particle.y);
+        const node = ensureNode(id, `ink-burst ${fxClass(particle.fxId)}`); node.style.width = `${particle.r * 2}px`; node.style.height = `${particle.r * 2}px`; node.style.color = particle.color; node.style.opacity = String(particle.life / particle.max); place(node, particle.x, particle.y);
       }
     }
     for (const text of state.texts) {
@@ -811,7 +856,7 @@
     spawnEnemy: spawnEnemyBatch, spawnMixed, clearNormalEnemies, clearAllEnemies, spawnBoss, forceBossPhase2, setBossHealth, killBoss: killBossForTest,
     openUpgrade: () => openUpgrade(false), openShop, triggerChest, openEvent, triggerEliteWave, setStage, applyPreset, getStats: getDevStats,
     getBuild: getBuildSnapshot, loadBuild: loadBuildSnapshot, resetPlayer: resetDevPlayer, resetRun: () => resetGame(true), clearBattlefield,
-    getConfig: () => ({ WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES }), getState: () => state
+    getConfig: () => ({ WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES, CHARACTERS, INK_FX }), getState: () => state
   };
 
   function loop(now) {
@@ -821,16 +866,18 @@
   }
   requestAnimationFrame(loop);
 
-  $("startButton").onclick = () => { sound("coin"); resetGame(false); };
+  $("startButton").onclick = () => { if ((CHARACTERS[homeCharacterKey] || CHARACTER).status !== "ready") return; sound("coin"); resetGame(false); };
   $("devStartButton").onclick = () => { sound("coin"); resetGame(true); };
   $("howButton").onclick = () => ui.how.classList.remove("hidden");
+  $("characterButton").onclick = () => { renderCharacterChoices(); $("characterPanel").classList.remove("hidden"); };
+  $("growthButton").onclick = () => showInfo("growth"); $("weaponButton").onclick = () => showInfo("weapons"); $("settingsButton").onclick = () => showInfo("settings"); $("saveButton").onclick = () => showInfo("save");
   document.querySelectorAll("[data-close]").forEach(button => button.onclick = () => $(button.dataset.close).classList.add("hidden"));
   $("rerollButton").onclick = () => { if (state.rerolls <= 0 && !state.infiniteRerolls) return; if (!state.infiniteRerolls) state.rerolls--; ui.rerolls.textContent = state.rerolls; renderUpgradeChoices(); };
   $("leaveShop").onclick = closeShop;
   document.querySelectorAll("[data-event]").forEach(button => button.onclick = () => resolveEvent(button.dataset.event));
   $("pauseButton").onclick = pause; $("resumeButton").onclick = resume; $("quitButton").onclick = () => endGame(false);
   $("againButton").onclick = () => resetGame(Boolean(state.dev));
-  $("menuButton").onclick = () => { state = { mode: "menu" }; clearWorldNodes(); ui.result.classList.add("hidden"); ui.menu.classList.remove("hidden"); window.dispatchEvent(new CustomEvent("meow-dev-ended")); };
+  $("menuButton").onclick = () => { state = { mode: "menu" }; clearWorldNodes(); ui.result.classList.add("hidden"); ui.menu.classList.remove("hidden"); renderHomeCharacter("moxiaobai"); window.dispatchEvent(new CustomEvent("meow-dev-ended")); };
   addEventListener("keydown", event => { keys.add(event.code); if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault(); if ((event.code === "Escape" || event.code === "KeyP") && !event.repeat) { if (state.mode === "playing") pause(); else if (state.mode === "paused") resume(); } });
   addEventListener("keyup", event => keys.delete(event.code));
   ui.joystick.addEventListener("pointerdown", event => { joy.active = true; joy.id = event.pointerId; ui.joystick.setPointerCapture(event.pointerId); moveJoy(event); });
@@ -839,6 +886,6 @@
   function moveJoy(event) { const rect = ui.joystick.getBoundingClientRect(), centerX = rect.left + rect.width / 2, centerY = rect.top + rect.height / 2, dx = event.clientX - centerX, dy = event.clientY - centerY, length = Math.hypot(dx, dy), amount = Math.min(1, length / 43); joy.x = length ? dx / length * amount : 0; joy.y = length ? dy / length * amount : 0; ui.joystick.firstElementChild.style.transform = `translate(${joy.x * 34}px,${joy.y * 34}px)`; }
   function endJoy() { joy.active = false; joy.x = joy.y = 0; ui.joystick.firstElementChild.style.transform = ""; }
 
-  window.__MEOW_GAME__ = { getState: () => state, start: resetGame, end: (win = true) => endGame(win), dev: devApi, data: { WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES, BOSS, CHARACTER } };
+  window.__MEOW_GAME__ = { getState: () => state, start: resetGame, end: (win = true) => endGame(win), dev: devApi, data: { WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, LEGACY_ASSET_MAP, INK_FX } };
   if (new URLSearchParams(location.search).get("dev") === "1") resetGame(true);
 })();

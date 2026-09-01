@@ -2,6 +2,23 @@
   "use strict";
 
   const artRoot = "assets/art/";
+  const artAsset = (inkFile, legacyFile) => ({ art: `${artRoot}${inkFile}`, fallback_art: `${artRoot}${legacyFile}`, legacy_art: `${artRoot}${legacyFile}` });
+  const LEGACY_ASSET_MAP = {
+    hero_balanced: "character_moxiaobai_ink", hero_nine_lives: "character_chihen_ink", hero_summoner: "character_qingyan_ink",
+    weapon_old_fishbone: "weapon_fishbone_ink", weapon_old_yarn: "weapon_leaf_ink", weapon_old_claw: "weapon_claw_ink", weapon_old_laser: "weapon_bell_line_ink",
+    weapon_old_can: "weapon_ink_bomb", weapon_old_orbit: "weapon_fan_blade", weapon_old_dot: "weapon_ink_mist", weapon_old_knockback: "weapon_water_wave",
+    weapon_old_area: "weapon_ink_sigil", weapon_old_chain: "weapon_thunder_ink", weapon_old_return: "weapon_return_fish", weapon_old_shockwave: "weapon_ink_roar",
+    enemy_old_grunt: "enemy_ink_spirit_ink", enemy_old_fast: "enemy_shadow_mouse_ink", enemy_old_tank: "enemy_stone_beast_ink", boss_old_tanuki: "boss_ink_tanuki_ink"
+  };
+  const INK_FX = {
+    FX_001: { id: "FX_001", visual: "brush-slash", color: "#2d706b", accent: "#efe6d2", maxParticles: 12, readability: "high" },
+    FX_002: { id: "FX_002", visual: "ink-bloom", color: "#242824", accent: "#a63b2e", maxParticles: 18, readability: "high" },
+    FX_003: { id: "FX_003", visual: "flow-line", color: "#9bbec0", accent: "#d6b66b", maxParticles: 8, readability: "high" },
+    FX_004: { id: "FX_004", visual: "water-ring", color: "#4f928f", accent: "#e8dfca", maxParticles: 12, readability: "high" },
+    FX_005: { id: "FX_005", visual: "ink-pool", color: "#38465d", accent: "#a63b2e", maxParticles: 10, readability: "medium" },
+    FX_006: { id: "FX_006", visual: "ink-return", color: "#272b27", accent: "#e8dfca", maxParticles: 8, readability: "high" },
+    FX_007: { id: "FX_007", visual: "vermilion-return", color: "#2b2d29", accent: "#b8422f", maxParticles: 12, readability: "high" }
+  };
   const levelTable = (keys, rows) => [null, ...rows.map((values, index) => ({
     level: index + 1,
     ...Object.fromEntries(keys.map((key, column) => [key, values[column]]).filter(([, value]) => value !== null && value !== undefined))
@@ -76,16 +93,21 @@
   };
 
   const ENEMY_TYPES = {
-    mouse: { id: "ENM_GRUNT", name: "小墨灵", emoji: "墨", hp: 24, speed: 85, damage: 8, r: 15, xp: 1, art_key: "enemy_ink_spirit", art: `${artRoot}enemy-ink-spirit.svg`, ai_role: "melee", death_fx: "FX_006" },
-    bug: { id: "ENM_FAST", name: "疾影鼠", emoji: "影", hp: 16, speed: 125, damage: 7, r: 12, xp: 1, art_key: "enemy_shadow_mouse", art: `${artRoot}enemy-shadow-mouse.svg`, ai_role: "fast", death_fx: "FX_006" },
-    hedgehog: { id: "ENM_TANK", name: "石墨兽", emoji: "石", hp: 70, speed: 60, damage: 12, r: 21, xp: 3, art_key: "enemy_stone_beast", art: `${artRoot}enemy-stone-beast.svg`, ai_role: "tank", death_fx: "FX_006" },
-    bee: { id: "ENM_RANGED", name: "墨羽鸦", emoji: "羽", hp: 32, speed: 70, damage: 9, r: 14, xp: 2, art_key: "enemy_ink_crow", art: `${artRoot}enemy-ink-spirit.svg`, art_variant: "crow", ai_role: "ranged", ranged: true, death_fx: "FX_006" },
-    frog: { id: "ENM_SUPPORT", name: "铃纸灵", emoji: "铃", hp: 45, speed: 65, damage: 5, r: 17, xp: 3, art_key: "enemy_bell_spirit", art: `${artRoot}enemy-ink-spirit.svg`, art_variant: "support", ai_role: "support", ranged: true, death_fx: "FX_006" },
-    snail: { id: "ENM_SPECIAL", name: "残墨妖", emoji: "残", hp: 90, speed: 80, damage: 15, r: 22, xp: 5, art_key: "enemy_residual_ink", art: `${artRoot}enemy-stone-beast.svg`, art_variant: "residual", ai_role: "special", death_fx: "FX_007" }
+    mouse: { id: "ENM_GRUNT", name: "小墨灵", emoji: "墨", hp: 24, speed: 85, damage: 8, r: 15, xp: 1, art_key: "enemy_ink_spirit_ink", ...artAsset("enemy-ink-spirit-ink.png", "enemy-ink-spirit.svg"), ai_role: "melee", death_fx: "FX_006" },
+    bug: { id: "ENM_FAST", name: "疾影鼠", emoji: "影", hp: 16, speed: 125, damage: 7, r: 12, xp: 1, art_key: "enemy_shadow_mouse_ink", ...artAsset("enemy-shadow-mouse-ink.png", "enemy-shadow-mouse.svg"), ai_role: "fast", death_fx: "FX_006" },
+    hedgehog: { id: "ENM_TANK", name: "石墨兽", emoji: "石", hp: 70, speed: 60, damage: 12, r: 21, xp: 3, art_key: "enemy_stone_beast_ink", ...artAsset("enemy-stone-beast-ink.png", "enemy-stone-beast.svg"), ai_role: "tank", death_fx: "FX_006" },
+    bee: { id: "ENM_RANGED", name: "墨羽鸦", emoji: "羽", hp: 32, speed: 70, damage: 9, r: 14, xp: 2, art_key: "enemy_ink_crow_ink", ...artAsset("enemy-ink-crow-ink.png", "enemy-ink-spirit.svg"), art_variant: "crow", ai_role: "ranged", ranged: true, death_fx: "FX_006" },
+    frog: { id: "ENM_SUPPORT", name: "铃纸灵", emoji: "铃", hp: 45, speed: 65, damage: 5, r: 17, xp: 3, art_key: "enemy_bell_spirit_ink", ...artAsset("enemy-bell-spirit-ink.png", "enemy-ink-spirit.svg"), art_variant: "support", ai_role: "support", ranged: true, death_fx: "FX_006" },
+    snail: { id: "ENM_SPECIAL", name: "残墨妖", emoji: "残", hp: 90, speed: 80, damage: 15, r: 22, xp: 5, art_key: "enemy_residual_ink", ...artAsset("enemy-residual-ink.png", "enemy-stone-beast.svg"), art_variant: "residual", ai_role: "special", death_fx: "FX_007" }
   };
 
-  const BOSS = { id: "BOSS_1", name: "泼墨狸将", art_key: "boss_ink_tanuki", art: `${artRoot}boss-ink-tanuki.svg`, phases: 2, hp: 3500, damage: 20, speed: 50, skill_set: ["fan_ink_bullets", "brush_mark_aoe"], phase_art: ["calm_brush", "vermilion_brush"], skill_fx: ["FX_002", "FX_005"] };
-  const CHARACTER = { id: "CHAR_BALANCED", name: "小橘侠", role: "均衡型", art_key: "hero_balanced", art: `${artRoot}hero-balanced.svg`, style_theme: "anime_sumi_e", base_stats: { maxHp: 120, speed: 195, damageMul: 1, attackSpeed: 1, crit: .05, size: 1, armor: 0, pickup: 82 }, slot_rules: { weapon: 6, device: 2 } };
+  const BOSS = { id: "BOSS_1", name: "泼墨狸将", art_key: "boss_ink_tanuki_ink", ...artAsset("boss-ink-tanuki-ink.png", "boss-ink-tanuki.svg"), phases: 2, hp: 3500, damage: 20, speed: 50, skill_set: ["fan_ink_bullets", "brush_mark_aoe"], phase_art: ["calm_brush", "vermilion_brush"], skill_fx: ["FX_002", "FX_005"] };
+  const CHARACTERS = {
+    moxiaobai: { id: "CHAR_BALANCED", key: "moxiaobai", name: "墨小白", role: "均衡型 / 万金油", status: "ready", status_text: "可出战", palette: "teal", art_key: "character_moxiaobai_ink", ...artAsset("character-moxiaobai-ink.png", "hero-balanced.png"), style_theme: "anime_sumi_e", summary: "基础扎实、武器自由，依靠本局 Build 应对各种战局。", traits: ["6 武器槽", "2 个固定装置槽", "不能使用自主移动召唤物", "基础属性强化效果略高"], base_stats: { maxHp: 120, speed: 195, damageMul: 1, attackSpeed: 1.05, crit: .05, size: 1, armor: 0, pickup: 82 }, slot_rules: { weapon: 6, device: 2, deviceMax: 3, summon: 0 }, mechanics: { type: "standard_build", allowAutonomousSummons: false } },
+    chihen: { id: "CHAR_NINE_LIVES", key: "chihen", name: "赤痕", role: "九命型 / 高风险高输出", status: "development", status_text: "开发中", palette: "vermilion", art_key: "character_chihen_ink", ...artAsset("character-chihen-ink.png", "hero-balanced.png"), style_theme: "anime_sumi_e", summary: "九命轮回，以生命上限换取永久攻击、攻速与暴击成长。", traits: ["6 武器槽", "无召唤与固定装置", "九命自动复活", "复活后获得一次完全挡伤护盾"], base_stats: { maxHp: 120, speed: 190, damageMul: 1.12, attackSpeed: 1.08, crit: .07, size: 1, armor: 0, pickup: 78 }, slot_rules: { weapon: 6, device: 0, summon: 0 }, mechanics: { type: "nine_lives", lives: 9, reviveMaxHpMultiplier: .5, reviveShieldCharges: 1, challengeExtraRevive: false } },
+    qingyan: { id: "CHAR_SUMMONER", key: "qingyan", name: "青砚", role: "召唤型 / 阵容经营", status: "development", status_text: "开发中", palette: "indigo", art_key: "character_qingyan_ink", ...artAsset("character-qingyan-ink.png", "hero-balanced.png"), style_theme: "anime_sumi_e", summary: "本体输出偏低，围绕伙伴能量、阵亡联动与召唤复活经营阵容。", traits: ["初始 3 武器槽", "初始 4 召唤槽", "伙伴能量强化", "召唤物使用独立属性体系"], base_stats: { maxHp: 100, speed: 185, damageMul: .8, attackSpeed: .95, crit: .05, size: 1, armor: 0, pickup: 88 }, slot_rules: { weapon: 3, weaponMax: 4, device: 0, summon: 4, summonMax: 6 }, mechanics: { type: "summoner_roster", companionEnergy: true, deathLinkBuff: true, inheritPlayerStats: false, allowedScaling: ["summon_level", "summon_affix", "growth_tree", "specific_synergy"] } }
+  };
+  const CHARACTER = CHARACTERS.moxiaobai;
 
-  window.MEOW_DATA = { WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES, BOSS, CHARACTER };
+  window.MEOW_DATA = { WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, LEGACY_ASSET_MAP, INK_FX };
 })();
