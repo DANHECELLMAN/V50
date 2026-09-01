@@ -76,7 +76,7 @@
       </div>
     </section>
 
-    <section id="characterPanel" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="characterPanelTitle"><div class="panel character-panel ink-panel"><button class="close" data-close="characterPanel" aria-label="关闭">×</button><p class="eyebrow">角色</p><h2 id="characterPanelTitle">三位猫侠 · 三种战斗方式</h2><p class="panel-note">墨小白现已可出战；赤痕与青砚先展示正式配置，机制仍在开发中。</p><div id="characterChoices" class="character-choice-grid"></div></div></section>
+    <section id="characterPanel" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="characterPanelTitle"><div class="panel character-panel ink-panel"><button class="close" data-close="characterPanel" aria-label="关闭">×</button><p class="eyebrow">角色</p><h2 id="characterPanelTitle">三位猫侠 · 三种战斗方式</h2><p class="panel-note">三位角色均可出战。赤痕与青砚使用正式立绘；局内形象暂为独立水墨占位，等待后续建模方案。</p><div id="characterChoices" class="character-choice-grid"></div></div></section>
 
     <section id="infoPanel" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="infoTitle"><div class="panel info-panel ink-panel"><button class="close" data-close="infoPanel" aria-label="关闭">×</button><p id="infoKicker" class="eyebrow">庭院卷册</p><h2 id="infoTitle">功能信息</h2><div id="infoBody" class="info-body"></div><button class="secondary wide" data-close="infoPanel">收起卷册</button></div></section>
 
@@ -92,6 +92,7 @@
 
     <div id="hud" class="hud hidden">
       <div class="hud-top"><div class="hero-status paper-strip"><span class="mini-portrait"><img id="hudHeroImage" src="assets/art/hero-balanced.png" alt="" /></span><div class="health-wrap"><span id="hudHeroName">墨小白</span><div class="bar health"><i id="healthBar"></i></div><b id="healthText">120 / 120</b></div></div><div class="timer paper-strip"><small id="phaseLabel">快速成型</small><b id="timerText">08:00</b></div><button id="pauseButton" aria-label="暂停">Ⅱ</button></div>
+      <div id="characterMechanic" class="character-mechanic hidden" aria-live="polite"></div>
       <div id="bossHud" class="boss-hud hidden"><span id="bossName">泼墨狸将 · 第一阶段</span><div class="bar boss"><i id="bossBar"></i></div></div>
       <div class="hud-bottom paper-strip"><div class="level-badge">境 <b id="levelText">1</b></div><div class="bar xp"><i id="xpBar"></i></div><div class="coin-hud">钱 <b id="coinText">0</b></div></div>
       <div id="objectiveToast" class="objective-toast hidden"></div><div id="weaponDock" class="weapon-dock"></div>

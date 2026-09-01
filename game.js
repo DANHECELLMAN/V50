@@ -18,6 +18,8 @@
   const fxMeta = id => INK_FX?.[id] || INK_FX?.FX_001 || { visual: "brush-slash", maxParticles: 10 };
   const fxClass = id => `fx-${fxMeta(id).visual}`;
   const imageMarkup = (resource, alt = "") => `<img src="${resource.art}" data-fallback="${resource.fallback_art || resource.legacy_art || ""}" alt="${alt}" draggable="false">`;
+  const portraitResource = character => ({ art: character.portrait_art || character.art, fallback_art: character.portrait_fallback_art || character.fallback_art });
+  const combatResource = character => ({ art: character.combat_art || character.art, fallback_art: character.combat_fallback_art || character.fallback_art });
   function setArtImage(image, resource, alt = "") {
     if (!image || !resource) return;
     image.alt = alt; image.dataset.fallback = resource.fallback_art || resource.legacy_art || ""; image.dataset.fallbackUsed = ""; image.src = resource.art;
@@ -34,7 +36,7 @@
     healthBar: $("healthBar"), healthText: $("healthText"), xpBar: $("xpBar"), levelText: $("levelText"),
     timerText: $("timerText"), phaseLabel: $("phaseLabel"), coinText: $("coinText"), bossHud: $("bossHud"),
     bossBar: $("bossBar"), bossName: $("bossName"), toast: $("objectiveToast"), dock: $("weaponDock"),
-    choices: $("upgradeChoices"), rerolls: $("rerollCount"), shopChoices: $("shopChoices"), shopCoins: $("shopCoins"), build: $("buildSummary")
+    choices: $("upgradeChoices"), rerolls: $("rerollCount"), shopChoices: $("shopChoices"), shopCoins: $("shopCoins"), build: $("buildSummary"), mechanic: $("characterMechanic")
   };
 
   const profile = (() => {
@@ -51,7 +53,7 @@
     const character = CHARACTERS[key] || CHARACTER; homeCharacterKey = character.key;
     const ready = character.status === "ready", start = $("startButton");
     $("homeHero").dataset.character = character.key; $("homeHero").setAttribute("aria-label", `当前角色${character.name}`);
-    setArtImage($("homeHeroImage"), character, `Q版动漫水墨猫侠${character.name}`);
+    setArtImage($("homeHeroImage"), portraitResource(character), `Q版动漫水墨猫侠${character.name}`);
     $("heroCaptionName").textContent = character.name; $("heroCaptionRole").textContent = character.role.replace(" / ", " · ");
     $("homeCharacterMark").textContent = characterMark(character.key); $("homeCharacterName").textContent = character.name; $("homeCharacterStatus").textContent = character.status_text;
     $("homeCharacterRole").textContent = character.role; $("homeCharacterSummary").textContent = character.summary;
@@ -60,7 +62,7 @@
     start.disabled = !ready; start.classList.toggle("locked-home", !ready); start.querySelector("b").textContent = ready ? "开始冒险" : `${character.name}开发中`; start.querySelector("small").textContent = ready ? "踏入墨韵旧庭 · 八分钟试炼" : "请在角色卷中选择墨小白出战";
   }
   function renderCharacterChoices() {
-    $("characterChoices").innerHTML = Object.values(CHARACTERS).map(character => `<button class="character-choice ${character.palette} ${character.status !== "ready" ? "is-development" : ""}" data-character="${character.key}"><span class="character-choice-art">${imageMarkup(character, character.name)}</span><span class="character-choice-copy"><small>${character.status_text}</small><b>${character.name}</b><em>${character.role}</em><p>${character.summary}</p><span>${character.traits.slice(0, 3).join(" · ")}</span></span></button>`).join("");
+    $("characterChoices").innerHTML = Object.values(CHARACTERS).map(character => `<button class="character-choice ${character.palette} ${character.status !== "ready" ? "is-development" : ""}" data-character="${character.key}"><span class="character-choice-art">${imageMarkup(portraitResource(character), character.name)}</span><span class="character-choice-copy"><small>${character.status_text}</small><b>${character.name}</b><em>${character.role}</em><p>${character.summary}</p><span>${character.traits.join(" · ")}</span></span></button>`).join("");
     $("characterChoices").querySelectorAll("[data-character]").forEach(button => button.onclick = () => { renderHomeCharacter(button.dataset.character); $("characterPanel").classList.add("hidden"); });
   }
   function showInfo(type) {
@@ -109,22 +111,30 @@
   }
 
   function levelXpRequirement(level) { return level <= 1 ? 16 : Math.floor(15 + level * 7 + Math.pow(level, 1.35)); }
-  function createPlayer(dev) {
-    const base = { ...CHARACTER.base_stats, maxHp: dev ? 500 : CHARACTER.base_stats.maxHp };
+  function createPlayer(character, dev) {
+    const baseStats = character?.base_stats || CHARACTER.base_stats;
+    const base = { ...baseStats, maxHp: dev ? Math.max(500, baseStats.maxHp) : baseStats.maxHp };
     return {
       x: WORLD_W / 2, y: WORLD_H / 2, r: 21, hp: base.maxHp, maxHp: base.maxHp, speed: base.speed, invuln: 0,
       level: 1, xp: 0, nextXp: levelXpRequirement(1), pickup: base.pickup, damageMul: base.damageMul,
       attackSpeed: base.attackSpeed, crit: base.crit, size: base.size, armor: base.armor, base,
-      runtime: { damage: 1, speed: 1 }, weapons: { yarn: 1 }, passives: {}, passiveWeights: {}, devices: {}, moving: false,
+      runtime: { damage: 1, speed: 1, attackSpeed: 1, crit: 0 }, weapons: { yarn: 1 }, passives: {}, passiveWeights: {}, devices: {}, moving: false,
       facing: 1, movedDistance: 0
     };
+  }
+
+  function createCharacterState(character) {
+    if (character.key === "chihen") return { type: "nine_lives", livesRemaining: character.mechanics.lives, revivesUsed: 0, shieldCharges: 0, bloodClaw: 1.1, fateDash: 3.2 };
+    if (character.key === "qingyan") return { type: "summoner_roster", energy: 0, energyMax: character.mechanics.companionEnergyMax || 100, empowerUntil: 0, deathLinkUntil: 0, recall: 7, ward: 4.5, wardUntil: 0 };
+    return { type: "standard_build" };
   }
 
   function recalculatePlayerStats({ healDelta = false } = {}) {
     const player = state.player;
     if (!player) return;
-    player.base ||= { ...CHARACTER.base_stats };
-    player.runtime ||= { damage: 1, speed: 1 };
+    player.base ||= { ...(state.character?.base_stats || CHARACTER.base_stats) };
+    player.runtime ||= { damage: 1, speed: 1, attackSpeed: 1, crit: 0 };
+    player.runtime.attackSpeed ??= 1; player.runtime.crit ??= 0;
     player.passiveWeights ||= {};
     const weight = id => Number.isFinite(player.passiveWeights[id]) ? player.passiveWeights[id] : (player.passives[id] || 0);
     const oldMax = player.maxHp || player.base.maxHp;
@@ -132,9 +142,9 @@
     player.maxHp = Math.max(1, player.base.maxHp + 22 * weight("health"));
     player.speed = Math.max(1, player.base.speed * Math.pow(1.10, weight("speed")) * player.runtime.speed);
     player.damageMul = Math.max(.01, player.base.damageMul * Math.pow(1.18, weight("power")) * player.runtime.damage);
-    player.attackSpeed = Math.max(.05, player.base.attackSpeed * Math.pow(1.14, weight("haste")));
+    player.attackSpeed = Math.max(.05, player.base.attackSpeed * Math.pow(1.14, weight("haste")) * player.runtime.attackSpeed);
     player.pickup = Math.max(1, player.base.pickup + 38 * weight("magnet"));
-    player.crit = clamp(player.base.crit + .08 * weight("crit"), 0, 1);
+    player.crit = clamp(player.base.crit + .08 * weight("crit") + player.runtime.crit, 0, 1);
     player.size = Math.max(.1, player.base.size * Math.pow(1.15, weight("size")));
     player.armor = clamp(player.base.armor + .08 * weight("armor"), 0, .9);
     player.hp = clamp(oldHp + (healDelta ? Math.max(0, player.maxHp - oldMax) : 0), 0, player.maxHp);
@@ -169,22 +179,122 @@
   function resetGame(devOverride = null) {
     const queryDev = new URLSearchParams(location.search).get("dev") === "1";
     const dev = devOverride === null ? queryDev : Boolean(devOverride);
+    const activeCharacter = CHARACTERS[homeCharacterKey] || CHARACTER;
     state = {
       dev, mode: dev ? "playing" : "upgrade", started: dev, duration: 480, time: 0, lastSpawn: 0,
       shake: 0, flash: 0, kills: 0, elites: 0, damage: 0, taken: 0, highHit: 0, coins: 0,
       pendingLevels: 0, rerolls: 2, bossSpawned: false, won: false, simSpeed: 1, devLabOpen: false,
       devRunPaused: dev, invincible: false, infiniteRerolls: false, fps: 0, damageBuckets: [],
       schedules: { chest1: false, chest2: false, merchant: false, event: false, elite1: false, elite2: false },
-      character: CHARACTER, player: createPlayer(dev), enemies: [], projectiles: [], enemyShots: [], pickups: [], particles: [], texts: [], hazards: [], devices: [], boss: null,
+      character: activeCharacter, characterState: createCharacterState(activeCharacter), player: createPlayer(activeCharacter, dev), summons: [], enemies: [], projectiles: [], enemyShots: [], pickups: [], particles: [], texts: [], hazards: [], devices: [], boss: null,
       playerZones: [], weaponPulses: [], orbiters: [], weaponDamage: {},
       timers: { ...Object.fromEntries(Object.keys(WEAPONS).map(id => [id, 0])), trap: 2, turret: 0 }, cam: { x: WORLD_W / 2, y: WORLD_H / 2 }
     };
     clearWorldNodes();
-    $("hudHeroName").textContent = state.character.name; setArtImage($("hudHeroImage"), state.character, state.character.name);
+    initializeCharacterRun();
+    $("hudHeroName").textContent = state.character.name; setArtImage($("hudHeroImage"), portraitResource(state.character), state.character.name);
     ui.menu.classList.add("hidden"); ui.result.classList.add("hidden"); ui.hud.classList.remove("hidden"); ui.joystick.classList.remove("hidden"); ui.bossHud.classList.add("hidden");
     updateDock(); updateHud();
     toast(dev ? "DEV MODE · 测试数据不会写入正式存档" : "开局墨意 · 先选一道笔势", 2200);
     if (dev) window.dispatchEvent(new CustomEvent("meow-dev-started")); else openUpgrade(true);
+  }
+
+  const SUMMONS = {
+    mouse: { name: "墨鼠机关", glyph: "鼠", maxHp: 82, damage: 15, range: 520, cooldown: 1.05, speed: 210, r: 16, color: "#27313a" },
+    crane: { name: "纸鹤群", glyph: "鹤", maxHp: 68, damage: 12, range: 570, cooldown: 1.28, speed: 230, r: 15, color: "#536b87" },
+    dog: { name: "石甲犬灵", glyph: "犬", maxHp: 150, damage: 24, range: 285, cooldown: .9, speed: 195, r: 22, color: "#3a4652" }
+  };
+  function createSummon(type, index = 0) {
+    const data = SUMMONS[type], angle = index * TAU / 3;
+    return { ...data, type, index, x: state.player.x + Math.cos(angle) * 74, y: state.player.y + Math.sin(angle) * 74, hp: data.maxHp, attack: .35 + index * .22, level: 1, dead: false, reviveAt: 0, buffUntil: 0 };
+  }
+  function initializeCharacterRun() {
+    state.characterState = createCharacterState(state.character);
+    state.summons = [];
+    if (state.character.key === "qingyan") state.summons = ["mouse", "crane", "dog"].map(createSummon);
+  }
+  function summonPower(summon) {
+    const cs = state.characterState, empowered = cs.empowerUntil > state.time, linked = cs.deathLinkUntil > state.time, commanded = summon.buffUntil > state.time, warded = cs.wardUntil > state.time;
+    return (1 + (summon.level - 1) * .18) * (empowered ? 1.55 : 1) * (linked ? 1.3 : 1) * (commanded ? 1.25 : 1) * (warded ? 1.18 : 1);
+  }
+  function onSummonKill() {
+    const cs = state.characterState;
+    if (state.character.key !== "qingyan" || cs.empowerUntil > state.time) return;
+    cs.energy = Math.min(cs.energyMax, cs.energy + 14);
+    if (cs.energy < cs.energyMax) return;
+    cs.energy = 0; cs.empowerUntil = state.time + (state.character.mechanics.empowerDuration || 6);
+    state.summons.forEach(summon => { if (!summon.dead) summon.hp = Math.min(summon.maxHp, summon.hp + summon.maxHp * .25); });
+    burst(state.player.x, state.player.y, "#d6b66b", 14, 80, "FX_003"); toast("伙伴能量满盈 · 全阵共鸣！", 2200);
+  }
+  function defeatSummon(summon) {
+    if (summon.dead) return;
+    summon.dead = true; summon.hp = 0; summon.reviveAt = state.time + 10;
+    state.characterState.deathLinkUntil = state.time + (state.character.mechanics.deathLinkDuration || 5);
+    burst(summon.x, summon.y, "#38465d", 8, 44, "FX_005"); updateDock(); toast(`${summon.name} 归纸 · 余阵强化`, 1600);
+  }
+  function reviveSummon(summon, commanded = false) {
+    summon.dead = false; summon.hp = summon.maxHp * (commanded ? 1 : .7); summon.attack = .25; summon.x = state.player.x + rand(-55, 55); summon.y = state.player.y + rand(-55, 55); summon.buffUntil = state.time + 3;
+    burst(summon.x, summon.y, "#d6b66b", 8, 48, "FX_003"); updateDock();
+  }
+  function useQingyanRecall() {
+    const dead = state.summons.find(summon => summon.dead);
+    if (dead) reviveSummon(dead, true);
+    state.summons.forEach(summon => { if (!summon.dead) { summon.hp = Math.min(summon.maxHp, summon.hp + summon.maxHp * .42); summon.buffUntil = state.time + 4; } });
+    burst(state.player.x, state.player.y, "#607a9b", 12, 75, "FX_003"); toast(dead ? `回墨号令 · ${dead.name}重归阵中` : "回墨号令 · 伙伴疗愈强化", 1800);
+  }
+  function updateQingyan(dt) {
+    const cs = state.characterState, player = state.player, alive = state.summons.filter(summon => !summon.dead);
+    cs.recall -= dt; cs.ward -= dt;
+    if (cs.recall <= 0) { useQingyanRecall(); cs.recall = state.character.skills.recall.cooldown; }
+    if (cs.ward <= 0) { cs.wardUntil = state.time + state.character.skills.ward.duration; cs.ward = state.character.skills.ward.cooldown; state.particles.push({ kind: "claw", fxId: "FX_004", x: player.x, y: player.y, r: 145, color: "#596f91", life: .8, max: .8 }); toast("砚光护阵 · 伙伴攻势提升", 1600); }
+    state.summons.forEach((summon, index) => {
+      if (summon.dead) { if (state.time >= summon.reviveAt) reviveSummon(summon); return; }
+      summon.attack -= dt;
+      const formationAngle = state.time * .38 + index * TAU / Math.max(1, alive.length), formationRadius = summon.type === "dog" ? 72 : 98;
+      let goalX = player.x + Math.cos(formationAngle) * formationRadius, goalY = player.y + Math.sin(formationAngle) * formationRadius;
+      const target = nearest(summon.x, summon.y, summon.range);
+      if (summon.type === "dog" && target) { goalX = target.x; goalY = target.y; }
+      const angle = Math.atan2(goalY - summon.y, goalX - summon.x), distance = Math.hypot(goalX - summon.x, goalY - summon.y);
+      summon.x = clamp(summon.x + Math.cos(angle) * Math.min(distance, summon.speed * dt), 35, WORLD_W - 35); summon.y = clamp(summon.y + Math.sin(angle) * Math.min(distance, summon.speed * dt), 35, WORLD_H - 35);
+      const power = summonPower(summon), speedBoost = power > 1 ? 1.28 : 1;
+      if (target && summon.attack <= 0) {
+        if (summon.type === "dog" && dist(summon, target) < summon.r + target.r + 28) { hitEnemy(target, summon.damage * power, "summon-dog", null, summon); burst(target.x, target.y, "#38465d", 5, 28, "FX_001"); }
+        if (summon.type === "mouse") shoot(summon.x, summon.y, target, { kind: "summon-mouse", color: summon.color, damage: summon.damage * power, speed: 480, range: summon.range, r: 5, fxId: "FX_003", source: summon, scaleWithPlayer: false });
+        if (summon.type === "crane") shoot(summon.x, summon.y, target, { kind: "summon-crane", color: summon.color, damage: summon.damage * power, speed: 540, range: summon.range, r: 6, pierce: 1, retention: .82, fxId: "FX_003", source: summon, scaleWithPlayer: false });
+        summon.attack = summon.cooldown / speedBoost;
+      }
+      for (const enemy of state.enemies) if (!enemy.dead && dist(summon, enemy) < summon.r + enemy.r) {
+        enemy._summonContact ||= {}; const key = `${summon.type}-${summon.index}`;
+        if ((enemy._summonContact[key] || 0) <= state.time) { enemy._summonContact[key] = state.time + .8; summon.hp -= enemy.damage * (summon.type === "dog" ? .45 : .7); if (summon.hp <= 0) defeatSummon(summon); }
+      }
+    });
+  }
+  function updateChihen(dt) {
+    const cs = state.characterState, player = state.player, skills = state.character.skills;
+    cs.bloodClaw -= dt; cs.fateDash -= dt;
+    if (cs.bloodClaw <= 0 && nearest(player.x, player.y, 230)) {
+      damageArea({ x: player.x, y: player.y, r: skills.bloodClaw.radius * player.size, damage: skills.bloodClaw.damage * player.damageMul, kind: "chihen-claw", source: { type: "character", id: "chihen" } });
+      state.particles.push({ kind: "claw", fxId: "FX_007", x: player.x, y: player.y, r: skills.bloodClaw.radius * player.size, color: "#b8422f", life: .42, max: .42 }); cs.bloodClaw = skills.bloodClaw.cooldown / player.attackSpeed;
+    }
+    const target = nearest(player.x, player.y, 560);
+    if (cs.fateDash <= 0 && target) {
+      const startX = player.x, startY = player.y, angle = Math.atan2(target.y - player.y, target.x - player.x), travel = Math.min(skills.fateDash.range, Math.max(60, dist(player, target) - 35));
+      player.x = clamp(player.x + Math.cos(angle) * travel, 60, WORLD_W - 60); player.y = clamp(player.y + Math.sin(angle) * travel, 60, WORLD_H - 60); player.facing = Math.cos(angle) < 0 ? -1 : 1; player.invuln = Math.max(player.invuln, .24);
+      beam(startX, startY, player.x, player.y, "#b8422f", "FX_007"); damageArea({ x: player.x, y: player.y, r: 92 * player.size, damage: skills.fateDash.damage * player.damageMul, kind: "chihen-dash", source: { type: "character", id: "chihen" }, knockback: 42 });
+      cs.fateDash = skills.fateDash.cooldown / player.attackSpeed;
+    }
+  }
+  function reviveChihen() {
+    const cs = state.characterState, player = state.player, mechanics = state.character.mechanics;
+    if (state.character.key !== "chihen" || cs.livesRemaining <= 0) return false;
+    cs.livesRemaining--; cs.revivesUsed++; cs.shieldCharges += mechanics.reviveShieldCharges || 1;
+    player.base.maxHp = Math.max(8, player.base.maxHp * mechanics.reviveMaxHpMultiplier); player.runtime.damage *= mechanics.reviveDamageMultiplier; player.runtime.attackSpeed *= mechanics.reviveAttackSpeedMultiplier; player.runtime.crit += mechanics.reviveCritBonus;
+    recalculatePlayerStats(); player.hp = player.maxHp; player.invuln = 1.5; state.flash = .28; state.shake = 14;
+    burst(player.x, player.y, "#b8422f", 18, 95, "FX_007"); toast(`九命复生 · 余命 ${cs.livesRemaining} · 墨环护命`, 2400); return true;
+  }
+  function updateCharacterAbilities(dt) {
+    if (state.character.key === "chihen") updateChihen(dt);
+    if (state.character.key === "qingyan") updateQingyan(dt);
   }
 
   function toast(text, ms = 1800) {
@@ -257,11 +367,11 @@
   function shootAngle(x, y, angle, options = {}) {
     const speed = options.speed ?? 430;
     state.projectiles.push({
-      x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: (options.r || 7) * state.player.size,
+      x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: (options.r || 7) * (options.scaleWithPlayer === false ? 1 : state.player.size),
       damage: options.damage ?? 12, life: options.life ?? ((options.range || speed * 2) / Math.max(1, speed)), color: options.color || "#356f69", pierce: options.pierce || 0,
       bounces: options.bounces || 0, kind: options.kind || "fishbone", hit: new Set(), retention: options.retention ?? 1,
       weaponId: options.weaponId || null, fxId: options.fxId || "FX_001", explodeRadius: options.explodeRadius || 0, childBlasts: options.childBlasts || 0, childDamage: options.childDamage || 0, basePierce: options.pierce || 0,
-      returnRange: options.returnRange || 0, returnDamage: options.returnDamage ?? 1, originX: x, originY: y, speed
+      returnRange: options.returnRange || 0, returnDamage: options.returnDamage ?? 1, originX: x, originY: y, speed, source: options.source || null
     });
   }
   function shoot(x, y, target, options = {}) {
@@ -432,17 +542,19 @@
     if (lastBucket && lastBucket.t === stamp) lastBucket.amount += amount; else buckets.push({ t: stamp, amount });
     while (buckets.length && buckets[0].t < state.time - 10.25) buckets.shift();
   }
-  function hitEnemy(enemy, raw, kind, weaponId = null) {
+  function hitEnemy(enemy, raw, kind, weaponId = null, source = null) {
     if (!enemy || enemy.dead) return;
-    const critical = Math.random() < state.player.crit, damage = raw * (critical ? 1.85 : 1);
+    const critical = SUMMONS[source?.type] ? false : Math.random() < state.player.crit, damage = raw * (critical ? 1.85 : 1);
     enemy.hp -= damage; state.damage += damage; recordDamage(damage); state.highHit = Math.max(state.highHit, damage);
+    enemy.lastHitSource = source || null;
     if (weaponId) state.weaponDamage[weaponId] = (state.weaponDamage[weaponId] || 0) + damage;
     textPop(enemy.x, enemy.y - enemy.r, Math.round(damage), critical ? "#d39b35" : "#f8f1e3", critical ? 18 : 12);
     if (kind === "bell" && Math.random() < .25) enemy.slow = .35;
-    if (enemy.hp <= 0) killEnemy(enemy);
+    if (enemy.hp <= 0) killEnemy(enemy, source || enemy.lastHitSource);
   }
-  function killEnemy(enemy) {
+  function killEnemy(enemy, source = null) {
     enemy.dead = true; enemy.death = .3; state.kills++; if (enemy.elite) state.elites++;
+    if (source?.type && SUMMONS[source.type] && state.character.key === "qingyan") onSummonKill();
     if (enemy === state.boss) {
       state.coins += 80; burst(enemy.x, enemy.y, "#ad853d", 44, 150); toast("泼墨狸将收笔认输！", 2800); ui.bossHud.classList.add("hidden");
       if (!state.dev) setTimeout(() => endGame(true), 2200);
@@ -457,10 +569,13 @@
   function hurtPlayer(raw, sourceX, sourceY) {
     const player = state.player;
     if (state.invincible || player.invuln > 0 || state.mode !== "playing") return;
-    const damage = Math.max(1, raw * (1 - player.armor));
+    const cs = state.characterState;
+    if (state.character.key === "chihen" && cs.shieldCharges > 0) { cs.shieldCharges--; player.invuln = .45; burst(player.x, player.y, "#b8422f", 9, 48, "FX_007"); textPop(player.x, player.y - 34, "墨环挡伤", "#f0c6aa", 15); return; }
+    const wardReduction = state.character.key === "qingyan" && cs.wardUntil > state.time ? .35 : 0;
+    const damage = Math.max(1, raw * (1 - player.armor) * (1 - wardReduction));
     player.hp -= damage; player.invuln = .62; state.taken += damage; state.shake = 8; state.flash = .15; sound("hurt");
     textPop(player.x, player.y - 30, `-${Math.round(damage)}`, "#d44f42", 17); pushFrom(player, { x: sourceX, y: sourceY }, 20);
-    if (player.hp <= 0) endGame(false);
+    if (player.hp <= 0 && !reviveChihen()) endGame(false);
   }
 
   function spawnBoss() {
@@ -500,7 +615,7 @@
     let hits = 0;
     forEachEnemy(enemy => {
       if (dist(effect, enemy) >= effect.r + enemy.r) return;
-      hits++; hitEnemy(enemy, effect.damage, effect.kind, effect.weaponId);
+      hits++; hitEnemy(enemy, effect.damage, effect.kind, effect.weaponId, effect.source || null);
       if (effect.knockback) pushFrom(enemy, effect, effect.knockback * (enemy === state.boss ? .22 : 1));
       if (effect.slow) { enemy._slowUntil = Math.max(enemy._slowUntil || 0, state.time + .8); enemy._slowAmount = Math.max(enemy._slowAmount || 0, effect.slow); }
     });
@@ -543,7 +658,7 @@
         if (projectile.returnRange && projectile.pierce < 0) return;
         projectile.hit.add(enemy);
         if (projectile.explodeRadius) { explodeProjectile(projectile); projectile.life = 0; return; }
-        hitEnemy(enemy, projectile.damage, projectile.kind, projectile.weaponId);
+        hitEnemy(enemy, projectile.damage, projectile.kind, projectile.weaponId, projectile.source || null);
         if (projectile.bounces > 0) {
           projectile.bounces--;
           const next = nearest(enemy.x, enemy.y, 220, candidate => !projectile.hit.has(candidate));
@@ -675,7 +790,7 @@
   function update(dt) {
     if (state.mode !== "playing" || (state.dev && state.devLabOpen && state.devRunPaused)) return;
     state.time += dt;
-    movePlayer(dt); attack(dt); updatePlayerWeaponEffects(dt); spawnTick(dt); updateEnemies(dt); updateBoss(dt); updateProjectiles(dt); updatePickups(dt); if (!state.dev) schedules(); updateFx(dt);
+    movePlayer(dt); attack(dt); updateCharacterAbilities(dt); updatePlayerWeaponEffects(dt); spawnTick(dt); updateEnemies(dt); updateBoss(dt); updateProjectiles(dt); updatePickups(dt); if (!state.dev) schedules(); updateFx(dt);
     state.cam.x = lerp(state.cam.x, state.player.x, .08); state.cam.y = lerp(state.cam.y, state.player.y, .08); state.shake = Math.max(0, state.shake - dt * 30); state.flash = Math.max(0, state.flash - dt); updateHud();
   }
   function updateFx(dt) {
@@ -693,12 +808,17 @@
     ui.xpBar.style.width = `${player.xp / player.nextXp * 100}%`; ui.levelText.textContent = player.level; ui.coinText.textContent = Math.floor(state.coins);
     ui.timerText.textContent = fmt(Math.max(0, state.duration - state.time)); ui.phaseLabel.textContent = phase();
     if (state.boss) ui.bossBar.style.width = `${clamp(state.boss.hp / state.boss.maxHp * 100, 0, 100)}%`;
+    const cs = state.characterState;
+    if (state.character.key === "chihen") { ui.mechanic.className = "character-mechanic chihen"; ui.mechanic.innerHTML = `<b>九命 ${cs.livesRemaining}</b><span>墨环 ${cs.shieldCharges}</span><small>复生 ${cs.revivesUsed} 次 · 攻势随死亡提升</small>`; }
+    else if (state.character.key === "qingyan") { const alive = state.summons.filter(summon => !summon.dead).length, empowered = Math.max(0, cs.empowerUntil - state.time); ui.mechanic.className = `character-mechanic qingyan${empowered > 0 ? " empowered" : ""}`; ui.mechanic.style.setProperty("--energy", `${cs.energy / cs.energyMax * 100}%`); ui.mechanic.innerHTML = `<b>伙伴 ${alive}/${state.summons.length}</b><span>墨能 ${Math.floor(cs.energy)}/${cs.energyMax}</span><small>${empowered > 0 ? `共鸣 ${empowered.toFixed(1)}s` : cs.deathLinkUntil > state.time ? "阵亡联动强化" : cs.wardUntil > state.time ? "砚光护阵展开" : "召唤独立成长"}</small>`; }
+    else { ui.mechanic.className = "character-mechanic hidden"; ui.mechanic.textContent = ""; }
   }
   function updateDock() {
     if (!state.player) return;
     ui.dock.innerHTML = "";
     Object.entries(state.player.weapons).forEach(([id, level]) => ui.dock.insertAdjacentHTML("beforeend", `<div class="weapon-slot" title="${WEAPONS[id].name}">${WEAPONS[id].icon}<small>${level}</small></div>`));
     Object.entries(state.player.devices).forEach(([id, level]) => ui.dock.insertAdjacentHTML("beforeend", `<div class="weapon-slot" title="${DEVICES[id].name}">${DEVICES[id].icon}<small>${level}</small></div>`));
+    state.summons?.forEach(summon => ui.dock.insertAdjacentHTML("beforeend", `<div class="weapon-slot summon-slot${summon.dead ? " is-dead" : ""}" title="${summon.name}">${summon.glyph}<small>${summon.dead ? "归" : summon.level}</small></div>`));
   }
   function buildSummary() {
     const items = [];
@@ -741,8 +861,17 @@
 
     const playerId = "player"; active.add(playerId);
     const activeCharacter = state.character || CHARACTER;
-    const playerNode = ensureNode(playerId, `entity player character-${activeCharacter.key}${state.player.moving ? " moving" : ""}${state.player.invuln > 0 ? " invulnerable" : ""}`, imageMarkup(activeCharacter));
-    playerNode.style.setProperty("--facing", state.player.facing || 1); place(playerNode, state.player.x, state.player.y);
+    const cs = state.characterState;
+    const playerNode = ensureNode(playerId, `entity player character-${activeCharacter.key}${state.player.moving ? " moving" : ""}${state.player.invuln > 0 ? " invulnerable" : ""}${activeCharacter.key === "chihen" && cs.shieldCharges ? " shielded" : ""}`, imageMarkup(combatResource(activeCharacter)));
+    playerNode.style.setProperty("--facing", state.player.facing || 1); playerNode.style.setProperty("--revive-stacks", cs.revivesUsed || 0); place(playerNode, state.player.x, state.player.y);
+
+    if (activeCharacter.key === "qingyan" && cs.wardUntil > state.time) {
+      const id = "qingyan-ward"; active.add(id); const ward = ensureNode(id, "qingyan-ward"); place(ward, state.player.x, state.player.y);
+    }
+    for (const summon of state.summons || []) if (!summon.dead) {
+      const id = objectId(summon, "summon"); active.add(id); const empowered = cs.empowerUntil > state.time || cs.deathLinkUntil > state.time || summon.buffUntil > state.time;
+      const node = ensureNode(id, `summon summon-${summon.type}${empowered ? " empowered" : ""}`, `<span>${summon.glyph}</span><i></i>`); node.title = `${summon.name} ${Math.ceil(summon.hp)}/${summon.maxHp}`; node.style.setProperty("--summon-hp", `${clamp(summon.hp / summon.maxHp * 100, 0, 100)}%`); place(node, summon.x, summon.y);
+    }
 
     for (const enemy of state.enemies) {
       const id = objectId(enemy, "enemy"); active.add(id);
@@ -815,7 +944,7 @@
     else if (["maxHp", "speed", "damageMul", "attackSpeed", "crit", "armor", "pickup", "size"].includes(key)) { player.base[key] = number; recalculatePlayerStats(); }
     updateHud();
   }
-  function resetDevPlayer() { if (!state.dev) return; const x = state.player.x, y = state.player.y; state.player = createPlayer(true); state.player.x = x; state.player.y = y; state.devices = []; recalculatePlayerStats(); updateDock(); updateHud(); }
+  function resetDevPlayer() { if (!state.dev) return; const x = state.player.x, y = state.player.y, character = state.character || CHARACTER; state.player = createPlayer(character, true); state.player.x = x; state.player.y = y; state.devices = []; initializeCharacterRun(); recalculatePlayerStats(); updateDock(); updateHud(); }
   function applyPreset(name) {
     const levels = { early: 3, mid: 10, late: 18, boss: 22, max: 35, stress: 60 }, progress = { early: .1, mid: .4, late: .75, boss: .84, max: .75, stress: .75 };
     clearBattlefield(); resetDevPlayer(); state.time = (progress[name] || .1) * state.duration;
@@ -833,11 +962,12 @@
   }
   function getBuildSnapshot() {
     const player = state.player;
-    return { version: 2, base: { ...player.base }, hp: player.hp, level: player.level, xp: player.xp, weapons: { ...player.weapons }, passives: { ...player.passives }, passiveWeights: { ...player.passiveWeights }, devices: { ...player.devices }, coins: state.coins, rerolls: state.rerolls };
+    return { version: 3, character: state.character.key, base: { ...player.base }, hp: player.hp, level: player.level, xp: player.xp, weapons: { ...player.weapons }, passives: { ...player.passives }, passiveWeights: { ...player.passiveWeights }, devices: { ...player.devices }, coins: state.coins, rerolls: state.rerolls };
   }
   function loadBuildSnapshot(data) {
     if (!data || typeof data !== "object") throw new Error("Build 必须是 JSON 对象");
-    resetDevPlayer(); const player = state.player;
+    if (data.character && CHARACTERS[data.character]) { state.character = CHARACTERS[data.character]; homeCharacterKey = data.character; }
+    resetDevPlayer(); const player = state.player; $("hudHeroName").textContent = state.character.name; setArtImage($("hudHeroImage"), portraitResource(state.character), state.character.name);
     if (data.base && typeof data.base === "object") for (const key of ["maxHp", "speed", "damageMul", "attackSpeed", "crit", "size", "armor", "pickup"]) if (Number.isFinite(Number(data.base[key]))) player.base[key] = Number(data.base[key]);
     setPlayerLevel(data.level || 1); player.xp = clamp(Number(data.xp) || 0, 0, player.nextXp - 1);
     Object.keys(WEAPONS).forEach(id => setWeaponLevel(id, Number(data.weapons?.[id]) || 0)); Object.keys(PASSIVES).forEach(id => setPassiveLevel(id, Number(data.passives?.[id]) || 0, Number(data.passiveWeights?.[id]) || Number(data.passives?.[id]) || 0)); Object.keys(DEVICES).forEach(id => setDeviceLevel(id, Number(data.devices?.[id]) || 0));
@@ -877,7 +1007,7 @@
   document.querySelectorAll("[data-event]").forEach(button => button.onclick = () => resolveEvent(button.dataset.event));
   $("pauseButton").onclick = pause; $("resumeButton").onclick = resume; $("quitButton").onclick = () => endGame(false);
   $("againButton").onclick = () => resetGame(Boolean(state.dev));
-  $("menuButton").onclick = () => { state = { mode: "menu" }; clearWorldNodes(); ui.result.classList.add("hidden"); ui.menu.classList.remove("hidden"); renderHomeCharacter("moxiaobai"); window.dispatchEvent(new CustomEvent("meow-dev-ended")); };
+  $("menuButton").onclick = () => { state = { mode: "menu" }; clearWorldNodes(); ui.result.classList.add("hidden"); ui.menu.classList.remove("hidden"); renderHomeCharacter(homeCharacterKey); window.dispatchEvent(new CustomEvent("meow-dev-ended")); };
   addEventListener("keydown", event => { keys.add(event.code); if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault(); if ((event.code === "Escape" || event.code === "KeyP") && !event.repeat) { if (state.mode === "playing") pause(); else if (state.mode === "paused") resume(); } });
   addEventListener("keyup", event => keys.delete(event.code));
   ui.joystick.addEventListener("pointerdown", event => { joy.active = true; joy.id = event.pointerId; ui.joystick.setPointerCapture(event.pointerId); moveJoy(event); });

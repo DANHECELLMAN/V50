@@ -102,10 +102,45 @@
   };
 
   const BOSS = { id: "BOSS_1", name: "泼墨狸将", art_key: "boss_ink_tanuki_ink", ...artAsset("boss-ink-tanuki-ink.png", "boss-ink-tanuki.svg"), phases: 2, hp: 3500, damage: 20, speed: 50, skill_set: ["fan_ink_bullets", "brush_mark_aoe"], phase_art: ["calm_brush", "vermilion_brush"], skill_fx: ["FX_002", "FX_005"] };
+  const characterAsset = (portraitFile, fallbackFile = "hero-balanced.png") => ({
+    art: `${artRoot}${portraitFile}`, portrait_art: `${artRoot}${portraitFile}`, portrait_fallback_art: `${artRoot}${fallbackFile}`,
+    fallback_art: `${artRoot}${fallbackFile}`, legacy_art: `${artRoot}${fallbackFile}`,
+    combat_art: `${artRoot}hero-balanced.svg`, combat_fallback_art: `${artRoot}${fallbackFile}`
+  });
   const CHARACTERS = {
-    moxiaobai: { id: "CHAR_BALANCED", key: "moxiaobai", name: "墨小白", role: "均衡型 / 万金油", status: "ready", status_text: "可出战", palette: "teal", art_key: "character_moxiaobai_ink", ...artAsset("character-moxiaobai-ink.png", "hero-balanced.png"), style_theme: "anime_sumi_e", summary: "基础扎实、武器自由，依靠本局 Build 应对各种战局。", traits: ["6 武器槽", "2 个固定装置槽", "不能使用自主移动召唤物", "基础属性强化效果略高"], base_stats: { maxHp: 120, speed: 195, damageMul: 1, attackSpeed: 1.05, crit: .05, size: 1, armor: 0, pickup: 82 }, slot_rules: { weapon: 6, device: 2, deviceMax: 3, summon: 0 }, mechanics: { type: "standard_build", allowAutonomousSummons: false } },
-    chihen: { id: "CHAR_NINE_LIVES", key: "chihen", name: "赤痕", role: "九命型 / 高风险高输出", status: "development", status_text: "开发中", palette: "vermilion", art_key: "character_chihen_ink", ...artAsset("character-chihen-ink.png", "hero-balanced.png"), style_theme: "anime_sumi_e", summary: "九命轮回，以生命上限换取永久攻击、攻速与暴击成长。", traits: ["6 武器槽", "无召唤与固定装置", "九命自动复活", "复活后获得一次完全挡伤护盾"], base_stats: { maxHp: 120, speed: 190, damageMul: 1.12, attackSpeed: 1.08, crit: .07, size: 1, armor: 0, pickup: 78 }, slot_rules: { weapon: 6, device: 0, summon: 0 }, mechanics: { type: "nine_lives", lives: 9, reviveMaxHpMultiplier: .5, reviveShieldCharges: 1, challengeExtraRevive: false } },
-    qingyan: { id: "CHAR_SUMMONER", key: "qingyan", name: "青砚", role: "召唤型 / 阵容经营", status: "development", status_text: "开发中", palette: "indigo", art_key: "character_qingyan_ink", ...artAsset("character-qingyan-ink.png", "hero-balanced.png"), style_theme: "anime_sumi_e", summary: "本体输出偏低，围绕伙伴能量、阵亡联动与召唤复活经营阵容。", traits: ["初始 3 武器槽", "初始 4 召唤槽", "伙伴能量强化", "召唤物使用独立属性体系"], base_stats: { maxHp: 100, speed: 185, damageMul: .8, attackSpeed: .95, crit: .05, size: 1, armor: 0, pickup: 88 }, slot_rules: { weapon: 3, weaponMax: 4, device: 0, summon: 4, summonMax: 6 }, mechanics: { type: "summoner_roster", companionEnergy: true, deathLinkBuff: true, inheritPlayerStats: false, allowedScaling: ["summon_level", "summon_affix", "growth_tree", "specific_synergy"] } }
+    moxiaobai: {
+      id: "CHAR_BALANCED", key: "moxiaobai", name: "墨小白", role: "均衡型 / 万金油", status: "ready", status_text: "可出战", palette: "teal", art_key: "character_moxiaobai_ink",
+      ...characterAsset("character-moxiaobai-ink.png"), style_theme: "anime_sumi_e", summary: "基础扎实、武器自由，依靠本局 Build 应对各种战局。",
+      traits: ["6 武器槽", "2 个固定装置槽", "不能使用自主移动召唤物", "基础属性强化效果略高"],
+      base_stats: { maxHp: 120, speed: 195, damageMul: 1, attackSpeed: 1.05, crit: .05, size: 1, armor: 0, pickup: 82 },
+      slot_rules: { weapon: 6, device: 2, deviceMax: 3, summon: 0 }, mechanics: { type: "standard_build", allowAutonomousSummons: false }
+    },
+    chihen: {
+      id: "CHAR_NINE_LIVES", key: "chihen", name: "赤痕", role: "九命型 / 高风险高输出", status: "ready", status_text: "可出战", palette: "vermilion", art_key: "character_chihen_ink",
+      ...characterAsset("character-chihen-ink.png"), style_theme: "anime_sumi_e", summary: "九命轮回，以生命上限换取永久攻击、攻速与暴击成长。",
+      traits: ["赤痕裂爪 · 近身爆发", "断命突进 · 自动追斩", "九命自动复活", "复活获挡伤并永久变强"],
+      base_stats: { maxHp: 120, speed: 190, damageMul: 1.12, attackSpeed: 1.08, crit: .07, size: 1, armor: 0, pickup: 78 },
+      slot_rules: { weapon: 6, device: 0, summon: 0 },
+      mechanics: { type: "nine_lives", lives: 9, reviveMaxHpMultiplier: .5, reviveShieldCharges: 1, reviveDamageMultiplier: 1.12, reviveAttackSpeedMultiplier: 1.08, reviveCritBonus: .03, challengeExtraRevive: false },
+      skills: {
+        bloodClaw: { name: "赤痕裂爪", cooldown: 4.6, damage: 48, radius: 155 },
+        fateDash: { name: "断命突进", cooldown: 7.5, damage: 66, range: 230 },
+        lifeWard: { name: "墨环护命", description: "每次九命复活获得 1 次完全挡伤。" }
+      }
+    },
+    qingyan: {
+      id: "CHAR_SUMMONER", key: "qingyan", name: "青砚", role: "召唤型 / 阵容经营", status: "ready", status_text: "可出战", palette: "indigo", art_key: "character_qingyan_ink",
+      ...characterAsset("character-qingyan-ink.png"), style_theme: "anime_sumi_e", summary: "本体输出偏低，以伙伴能量、阵亡联动与召唤复活经营阵容。",
+      traits: ["落笔召灵 · 三类伙伴", "伙伴能量 · 满值共鸣", "阵亡联动 · 余阵强化", "回墨号令与砚光护阵"],
+      base_stats: { maxHp: 100, speed: 185, damageMul: .8, attackSpeed: .95, crit: .05, size: 1, armor: 0, pickup: 88 },
+      slot_rules: { weapon: 3, weaponMax: 4, device: 0, summon: 4, summonMax: 6 },
+      mechanics: { type: "summoner_roster", companionEnergy: true, companionEnergyMax: 100, empowerDuration: 6, deathLinkBuff: true, deathLinkDuration: 5, inheritPlayerStats: false, allowedScaling: ["summon_level", "summon_affix", "growth_tree", "specific_synergy"] },
+      skills: {
+        summon: { name: "落笔召灵", description: "墨鼠机关、纸鹤群、石甲犬灵从纸面入阵。" },
+        recall: { name: "回墨号令", cooldown: 12, description: "治疗伙伴，并提前唤回一名阵亡伙伴。" },
+        ward: { name: "砚光护阵", cooldown: 15, duration: 6, description: "展开护阵，降低本体伤害并强化伙伴。" }
+      }
+    }
   };
   const CHARACTER = CHARACTERS.moxiaobai;
 
