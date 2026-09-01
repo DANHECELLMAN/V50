@@ -1,560 +1,727 @@
 (() => {
   "use strict";
 
-  const $ = (id) => document.getElementById(id);
-  const canvas = $("gameCanvas");
-  const ctx = canvas.getContext("2d");
+  const $ = id => document.getElementById(id);
+  const { WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES, BOSS, CHARACTER } = window.MEOW_DATA;
+  const world = $("world");
+  const scene = $("gameScene");
+  const damageFlash = $("damageFlash");
   const TAU = Math.PI * 2;
+  const WORLD_W = 2400;
+  const WORLD_H = 1600;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const rand = (a, b) => a + Math.random() * (b - a);
-  const pick = (a) => a[(Math.random() * a.length) | 0];
+  const pick = array => array[(Math.random() * array.length) | 0];
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-  const fmt = (s) => `${String((s / 60) | 0).padStart(2, "0")}:${String(s % 60 | 0).padStart(2, "0")}`;
+  const fmt = seconds => `${String((seconds / 60) | 0).padStart(2, "0")}:${String(seconds % 60 | 0).padStart(2, "0")}`;
 
   const ui = {
-    menu: $("menu"), how: $("howPanel"), upgrade: $("upgradePanel"), shop: $("shopPanel"),
-    event: $("eventPanel"), pause: $("pausePanel"), result: $("resultPanel"), hud: $("hud"),
-    joystick: $("joystick"), healthBar: $("healthBar"), healthText: $("healthText"), xpBar: $("xpBar"),
-    levelText: $("levelText"), timerText: $("timerText"), phaseLabel: $("phaseLabel"), coinText: $("coinText"),
-    bossHud: $("bossHud"), bossBar: $("bossBar"), bossName: $("bossName"), toast: $("objectiveToast"),
-    dock: $("weaponDock"), choices: $("upgradeChoices"), rerolls: $("rerollCount"), shopChoices: $("shopChoices"),
-    shopCoins: $("shopCoins"), build: $("buildSummary")
+    menu: $("menu"), how: $("howPanel"), upgrade: $("upgradePanel"), shop: $("shopPanel"), event: $("eventPanel"),
+    pause: $("pausePanel"), result: $("resultPanel"), hud: $("hud"), joystick: $("joystick"),
+    healthBar: $("healthBar"), healthText: $("healthText"), xpBar: $("xpBar"), levelText: $("levelText"),
+    timerText: $("timerText"), phaseLabel: $("phaseLabel"), coinText: $("coinText"), bossHud: $("bossHud"),
+    bossBar: $("bossBar"), bossName: $("bossName"), toast: $("objectiveToast"), dock: $("weaponDock"),
+    choices: $("upgradeChoices"), rerolls: $("rerollCount"), shopChoices: $("shopChoices"), shopCoins: $("shopCoins"), build: $("buildSummary")
   };
 
   const profile = (() => {
     try { return { coins: 0, best: 0, wins: 0, ...JSON.parse(localStorage.getItem("meowGardenProfile") || "{}") }; }
     catch { return { coins: 0, best: 0, wins: 0 }; }
   })();
-  function saveProfile() { localStorage.setItem("meowGardenProfile", JSON.stringify(profile)); syncProfile(); }
-  function syncProfile() { $("profileCoins").textContent = profile.coins; $("bestTime").textContent = fmt(profile.best); }
+  const saveProfile = () => { localStorage.setItem("meowGardenProfile", JSON.stringify(profile)); syncProfile(); };
+  const syncProfile = () => { $("profileCoins").textContent = profile.coins; $("bestTime").textContent = fmt(profile.best); };
   syncProfile();
 
-  const WEAPONS = {
-    yarn: { name: "追踪毛线球", icon: "🧶", max: 7, desc: "自动追踪最近目标，升级增加伤害与射速。", tags: "投射物 · 追踪" },
-    fish: { name: "飞旋鱼骨", icon: "🐟", max: 7, desc: "高速穿透敌人，适合清理笔直怪群。", tags: "投射物 · 穿透" },
-    laser: { name: "激光笔", icon: "🔴", max: 7, desc: "瞬间命中目标，并向附近敌人弹射。", tags: "弹射 · 感电" },
-    paw: { name: "猫爪旋风", icon: "🐾", max: 7, desc: "周期性挥出环形猫爪，击退近身敌人。", tags: "范围 · 近战" }
-  };
-  const PASSIVES = {
-    power: { name: "磨爪板", icon: "🪵", max: 3, desc: "所有伤害 +18%" },
-    haste: { name: "猫薄荷", icon: "🌿", max: 3, desc: "攻击速度 +14%" },
-    health: { name: "豪华罐头", icon: "🥫", max: 3, desc: "最大生命 +22，并恢复等量生命" },
-    speed: { name: "追尾巴训练", icon: "💫", max: 3, desc: "移动速度 +10%" },
-    magnet: { name: "铃铛磁铁", icon: "🔔", max: 3, desc: "拾取范围 +38" },
-    crit: { name: "猎手胡须", icon: "〰️", max: 3, desc: "暴击率 +8%" },
-    size: { name: "蓬松尾巴", icon: "☁️", max: 3, desc: "范围与投射物尺寸 +15%" },
-    armor: { name: "纸箱堡垒", icon: "📦", max: 3, desc: "受到伤害 -8%" }
-  };
-  const DEVICES = {
-    turret: { name: "自动逗猫棒", icon: "🎣", max: 5, desc: "部署一座自动发射光点的固定炮台。", tags: "装置 · 投射物" },
-    trap: { name: "罐头地雷", icon: "🥫", max: 5, desc: "定期在脚下放置香味地雷，爆炸清怪。", tags: "装置 · 范围" }
-  };
-
   let state = { mode: "menu" };
-  let dpr = 1, viewW = innerWidth, viewH = innerHeight, last = performance.now(), audio = null;
+  let viewW = innerWidth;
+  let viewH = innerHeight;
+  let last = performance.now();
+  let audio = null;
+  let uid = 0;
+  const nodes = new Map();
   const keys = new Set();
   const joy = { active: false, id: null, x: 0, y: 0 };
 
-  function resize() {
-    viewW = innerWidth; viewH = innerHeight; dpr = Math.min(2, devicePixelRatio || 1);
-    canvas.width = viewW * dpr; canvas.height = viewH * dpr;
-    canvas.style.width = `${viewW}px`; canvas.style.height = `${viewH}px`;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-  addEventListener("resize", resize); resize();
+  function resize() { viewW = innerWidth; viewH = innerHeight; }
+  addEventListener("resize", resize);
+  resize();
 
   function sound(type) {
     try {
       audio ||= new (window.AudioContext || window.webkitAudioContext)();
-      const o = audio.createOscillator(), g = audio.createGain();
-      const map = { shoot: [520, .025, .025], hit: [170, .045, .035], level: [700, .22, .07], coin: [880, .06, .035], hurt: [110, .12, .09], boss: [75, .45, .12], win: [620, .5, .09] };
-      const [f, t, v] = map[type] || map.hit; o.frequency.value = f; o.type = type === "hurt" || type === "boss" ? "sawtooth" : "sine";
-      g.gain.setValueAtTime(v, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + t);
-      o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + t);
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+      const sounds = {
+        shoot: [520, .035, .022, "triangle"], hit: [165, .05, .03, "sine"], level: [690, .2, .06, "sine"],
+        coin: [880, .07, .032, "sine"], hurt: [105, .13, .08, "sawtooth"], boss: [72, .42, .1, "sawtooth"], win: [610, .5, .08, "triangle"]
+      };
+      const [frequency, duration, volume, wave] = sounds[type] || sounds.hit;
+      oscillator.frequency.value = frequency;
+      oscillator.type = wave;
+      gain.gain.setValueAtTime(volume, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(.001, audio.currentTime + duration);
+      oscillator.connect(gain).connect(audio.destination);
+      oscillator.start();
+      oscillator.stop(audio.currentTime + duration);
     } catch {}
   }
 
   function levelXpRequirement(level) { return level <= 1 ? 16 : Math.floor(15 + level * 7 + Math.pow(level, 1.35)); }
   function createPlayer(dev) {
-    const base = { maxHp: dev ? 500 : 120, speed: 195, damageMul: 1, attackSpeed: 1, crit: .05, size: 1, armor: 0, pickup: 82 };
-    return { x: 1200, y: 800, r: 19, hp: base.maxHp, maxHp: base.maxHp, speed: base.speed, invuln: 0, level: 1, xp: 0,
-      nextXp: levelXpRequirement(1), pickup: base.pickup, damageMul: base.damageMul, attackSpeed: base.attackSpeed, crit: base.crit,
-      size: base.size, armor: base.armor, base, runtime: { damage: 1, speed: 1 }, weapons: { yarn: 1 }, passives: {}, passiveWeights: {}, devices: {} };
+    const base = { ...CHARACTER.base_stats, maxHp: dev ? 500 : CHARACTER.base_stats.maxHp };
+    return {
+      x: WORLD_W / 2, y: WORLD_H / 2, r: 21, hp: base.maxHp, maxHp: base.maxHp, speed: base.speed, invuln: 0,
+      level: 1, xp: 0, nextXp: levelXpRequirement(1), pickup: base.pickup, damageMul: base.damageMul,
+      attackSpeed: base.attackSpeed, crit: base.crit, size: base.size, armor: base.armor, base,
+      runtime: { damage: 1, speed: 1 }, weapons: { yarn: 1 }, passives: {}, passiveWeights: {}, devices: {}, moving: false
+    };
   }
+
   function recalculatePlayerStats({ healDelta = false } = {}) {
-    const p = state.player; if (!p) return;
-    p.base ||= { maxHp: p.maxHp || 120, speed: p.speed || 195, damageMul: 1, attackSpeed: 1, crit: .05, size: 1, armor: 0, pickup: 82 };
-    p.runtime ||= { damage: 1, speed: 1 }; p.passiveWeights ||= {};
-    const w = id => Number.isFinite(p.passiveWeights[id]) ? p.passiveWeights[id] : (p.passives[id] || 0);
-    const oldMax = p.maxHp || p.base.maxHp, oldHp = Number.isFinite(p.hp) ? p.hp : oldMax;
-    p.maxHp = Math.max(1, p.base.maxHp + 22 * w("health"));
-    p.speed = Math.max(1, p.base.speed * Math.pow(1.10, w("speed")) * p.runtime.speed);
-    p.damageMul = Math.max(.01, p.base.damageMul * Math.pow(1.18, w("power")) * p.runtime.damage);
-    p.attackSpeed = Math.max(.05, p.base.attackSpeed * Math.pow(1.14, w("haste")));
-    p.pickup = Math.max(1, p.base.pickup + 38 * w("magnet"));
-    p.crit = clamp(p.base.crit + .08 * w("crit"), 0, 1);
-    p.size = Math.max(.1, p.base.size * Math.pow(1.15, w("size")));
-    p.armor = clamp(p.base.armor + .08 * w("armor"), 0, .9);
-    p.hp = clamp(oldHp + (healDelta ? Math.max(0, p.maxHp - oldMax) : 0), 0, p.maxHp);
+    const player = state.player;
+    if (!player) return;
+    player.base ||= { ...CHARACTER.base_stats };
+    player.runtime ||= { damage: 1, speed: 1 };
+    player.passiveWeights ||= {};
+    const weight = id => Number.isFinite(player.passiveWeights[id]) ? player.passiveWeights[id] : (player.passives[id] || 0);
+    const oldMax = player.maxHp || player.base.maxHp;
+    const oldHp = Number.isFinite(player.hp) ? player.hp : oldMax;
+    player.maxHp = Math.max(1, player.base.maxHp + 22 * weight("health"));
+    player.speed = Math.max(1, player.base.speed * Math.pow(1.10, weight("speed")) * player.runtime.speed);
+    player.damageMul = Math.max(.01, player.base.damageMul * Math.pow(1.18, weight("power")) * player.runtime.damage);
+    player.attackSpeed = Math.max(.05, player.base.attackSpeed * Math.pow(1.14, weight("haste")));
+    player.pickup = Math.max(1, player.base.pickup + 38 * weight("magnet"));
+    player.crit = clamp(player.base.crit + .08 * weight("crit"), 0, 1);
+    player.size = Math.max(.1, player.base.size * Math.pow(1.15, weight("size")));
+    player.armor = clamp(player.base.armor + .08 * weight("armor"), 0, .9);
+    player.hp = clamp(oldHp + (healDelta ? Math.max(0, player.maxHp - oldMax) : 0), 0, player.maxHp);
   }
+
   function setPassiveLevel(id, level, weight = level, healDelta = false) {
-    const data = PASSIVES[id], p = state.player; if (!data || !p) return;
-    const lv = clamp(Math.round(level), 0, data.max);
-    if (lv) { p.passives[id] = lv; p.passiveWeights[id] = Math.max(0, weight); }
-    else { delete p.passives[id]; delete p.passiveWeights[id]; }
+    const data = PASSIVES[id], player = state.player;
+    if (!data || !player) return;
+    const next = clamp(Math.round(level), 0, data.max);
+    if (next) { player.passives[id] = next; player.passiveWeights[id] = Math.max(0, weight); }
+    else { delete player.passives[id]; delete player.passiveWeights[id]; }
     recalculatePlayerStats({ healDelta }); updateDock(); updateHud();
   }
-  function syncTurretDevice() {
-    const level = state.player?.devices?.turret || 0;
-    const turrets = state.devices.filter(d => d.kind === "turret");
-    if (!level) state.devices = state.devices.filter(d => d.kind !== "turret");
-    else if (!turrets.length) deployTurret();
-    else { turrets[0].level = level; state.devices = state.devices.filter((d, i) => d.kind !== "turret" || i === state.devices.indexOf(turrets[0])); }
-  }
   function setDeviceLevel(id, level) {
-    const data = DEVICES[id], p = state.player; if (!data || !p) return;
-    const lv = clamp(Math.round(level), 0, data.max); if (lv) p.devices[id] = lv; else delete p.devices[id];
+    const data = DEVICES[id], player = state.player;
+    if (!data || !player) return;
+    const next = clamp(Math.round(level), 0, data.max);
+    if (next) player.devices[id] = next; else delete player.devices[id];
     if (id === "turret") syncTurretDevice();
-    if (id === "trap" && !lv) state.devices = state.devices.filter(d => d.kind !== "trap");
+    if (id === "trap" && !next) state.devices = state.devices.filter(device => device.kind !== "trap");
     updateDock();
   }
   function setWeaponLevel(id, level) {
-    const data = WEAPONS[id], p = state.player; if (!data || !p) return;
-    const lv = clamp(Math.round(level), 0, data.max); if (lv) p.weapons[id] = lv; else delete p.weapons[id]; updateDock();
+    const data = WEAPONS[id], player = state.player;
+    if (!data || !player) return;
+    const next = clamp(Math.round(level), 0, data.max);
+    if (next) player.weapons[id] = next; else delete player.weapons[id];
+    updateDock();
   }
 
+  function clearWorldNodes() { nodes.clear(); world.replaceChildren(); }
   function resetGame(devOverride = null) {
     const queryDev = new URLSearchParams(location.search).get("dev") === "1";
     const dev = devOverride === null ? queryDev : Boolean(devOverride);
-    const duration = 480;
     state = {
-      dev,
-      mode: dev ? "playing" : "upgrade", started: dev, duration, time: 0, lastSpawn: 0, shake: 0, flash: 0, kills: 0, elites: 0,
-      damage: 0, taken: 0, highHit: 0, coins: 0, pendingLevels: 0, rerolls: 2, bossSpawned: false, won: false,
-      simSpeed: 1, devLabOpen: false, devRunPaused: dev, invincible: false, infiniteRerolls: false, fps: 0, damageBuckets: [],
+      dev, mode: dev ? "playing" : "upgrade", started: dev, duration: 480, time: 0, lastSpawn: 0,
+      shake: 0, flash: 0, kills: 0, elites: 0, damage: 0, taken: 0, highHit: 0, coins: 0,
+      pendingLevels: 0, rerolls: 2, bossSpawned: false, won: false, simSpeed: 1, devLabOpen: false,
+      devRunPaused: dev, invincible: false, infiniteRerolls: false, fps: 0, damageBuckets: [],
       schedules: { chest1: false, chest2: false, merchant: false, event: false, elite1: false, elite2: false },
-      player: createPlayer(dev),
-      enemies: [], projectiles: [], enemyShots: [], pickups: [], particles: [], texts: [], hazards: [], devices: [], landmarks: [], boss: null,
-      timers: { yarn: 0, fish: 0, laser: 0, paw: 0, trap: 2, turret: 0 }, cam: { x: 1200, y: 800 }
+      player: createPlayer(dev), enemies: [], projectiles: [], enemyShots: [], pickups: [], particles: [], texts: [], hazards: [], devices: [], boss: null,
+      timers: { yarn: 0, fish: 0, laser: 0, paw: 0, trap: 2, turret: 0 }, cam: { x: WORLD_W / 2, y: WORLD_H / 2 }
     };
-    makeMap();
-    ui.menu.classList.add("hidden"); ui.result.classList.add("hidden"); ui.hud.classList.remove("hidden"); ui.joystick.classList.remove("hidden");
-    ui.bossHud.classList.add("hidden");
+    clearWorldNodes();
+    ui.menu.classList.add("hidden"); ui.result.classList.add("hidden"); ui.hud.classList.remove("hidden"); ui.joystick.classList.remove("hidden"); ui.bossHud.classList.add("hidden");
     updateDock(); updateHud();
-    toast(dev ? "DEV MODE · 测试资源不会写入正式存档" : "开局祝福 · 先选一个能力", 2200);
+    toast(dev ? "DEV MODE · 测试数据不会写入正式存档" : "开局墨意 · 先选一道笔势", 2200);
     if (dev) window.dispatchEvent(new CustomEvent("meow-dev-started")); else openUpgrade(true);
-  }
-
-  function makeMap() {
-    const l = state.landmarks;
-    l.push({ x: 480, y: 400, kind: "pond" }, { x: 1850, y: 440, kind: "tree" }, { x: 1750, y: 1270, kind: "shed" });
-    for (let i = 0; i < 38; i++) l.push({ x: rand(120, 2280), y: rand(100, 1500), kind: pick(["flower", "flower", "rock", "bush"]) });
   }
 
   function toast(text, ms = 1800) {
     ui.toast.textContent = text; ui.toast.classList.remove("hidden");
-    clearTimeout(toast.t); toast.t = setTimeout(() => ui.toast.classList.add("hidden"), ms);
+    clearTimeout(toast.timer); toast.timer = setTimeout(() => ui.toast.classList.add("hidden"), ms);
   }
-
   function rarity() {
-    const t = state.time / state.duration, r = Math.random();
-    return r < .04 + t * .09 ? "epic" : r < .22 + t * .16 ? "rare" : "common";
+    const progress = state.time / state.duration, roll = Math.random();
+    return roll < .04 + progress * .09 ? "epic" : roll < .22 + progress * .16 ? "rare" : "common";
   }
   function upgradePool() {
-    const p = state.player, pool = [];
-    Object.entries(WEAPONS).forEach(([id, d]) => {
-      const lv = p.weapons[id] || 0; if (lv < d.max) pool.push({ type: "weapon", id, level: lv + 1, ...d });
-    });
-    Object.entries(PASSIVES).forEach(([id, d]) => {
-      const lv = p.passives[id] || 0; if (lv < d.max) pool.push({ type: "passive", id, level: lv + 1, ...d });
-    });
-    Object.entries(DEVICES).forEach(([id, d]) => {
-      const lv = p.devices[id] || 0; if (lv < d.max) pool.push({ type: "device", id, level: lv + 1, ...d });
-    });
+    const player = state.player, pool = [];
+    Object.entries(WEAPONS).forEach(([id, data]) => { const level = player.weapons[id] || 0; if (level < data.max) pool.push({ type: "weapon", id, level: level + 1, ...data }); });
+    Object.entries(PASSIVES).forEach(([id, data]) => { const level = player.passives[id] || 0; if (level < data.max) pool.push({ type: "passive", id, level: level + 1, ...data }); });
+    Object.entries(DEVICES).forEach(([id, data]) => { const level = player.devices[id] || 0; if (level < data.max) pool.push({ type: "device", id, level: level + 1, ...data }); });
     return pool;
   }
   function chooseUpgrades() {
-    let pool = upgradePool(), choices = [];
-    const newPowers = pool.filter(x => (x.type === "weapon" ? !state.player.weapons[x.id] : x.type === "device" ? !state.player.devices[x.id] : false));
+    const pool = upgradePool(), choices = [];
+    const newPowers = pool.filter(item => item.type === "weapon" ? !state.player.weapons[item.id] : item.type === "device" ? !state.player.devices[item.id] : false);
     if (newPowers.length && Object.keys(state.player.weapons).length + Object.keys(state.player.devices).length < 8) choices.push(pick(newPowers));
     while (choices.length < 3 && pool.length) {
-      const candidate = pick(pool.filter(x => !choices.some(c => c.type === x.type && c.id === x.id)));
-      if (!candidate) break; choices.push(candidate);
+      const options = pool.filter(item => !choices.some(choice => choice.type === item.type && choice.id === item.id));
+      if (!options.length) break;
+      choices.push(pick(options));
     }
-    return choices.map(x => ({ ...x, rarity: rarity() }));
+    return choices.map(item => ({ ...item, rarity: rarity() }));
   }
   function renderUpgradeChoices() {
-    const choices = chooseUpgrades(); ui.choices.innerHTML = "";
-    choices.forEach(c => {
-      const b = document.createElement("button"); b.className = `upgrade-card ${c.rarity}`;
-      const rare = c.rarity === "epic" ? "史诗" : c.rarity === "rare" ? "稀有" : "普通";
-      const bonus = c.rarity === "epic" ? " · 效果 1.5 倍" : c.rarity === "rare" ? " · 效果 1.25 倍" : "";
-      b.innerHTML = `<span class="rarity">${rare}</span><span class="upgrade-icon">${c.icon}</span><h3>${c.name} <small>Lv.${c.level}</small></h3><p>${c.desc}${bonus}</p><span class="tag">${c.tags || (c.type === "passive" ? "被动强化" : "")}</span>`;
-      b.onclick = () => applyUpgrade(c); ui.choices.appendChild(b);
+    ui.choices.innerHTML = "";
+    chooseUpgrades().forEach(choice => {
+      const button = document.createElement("button");
+      button.className = `upgrade-card ${choice.rarity}`;
+      const rarityName = choice.rarity === "epic" ? "史诗" : choice.rarity === "rare" ? "稀有" : "普通";
+      const bonus = choice.rarity === "epic" ? " · 效果 1.5 倍" : choice.rarity === "rare" ? " · 效果 1.25 倍" : "";
+      const ultimate = choice.type === "weapon" && choice.level === 7 ? `<strong class="ultimate-label">终极 · ${choice.name}</strong>` : "";
+      button.innerHTML = `<span class="rarity">${rarityName}</span><span class="upgrade-icon">${choice.icon}</span><h3>${choice.name} <small>Lv.${choice.level}</small></h3><p>${choice.desc}${bonus}</p>${ultimate}<span class="tag">${choice.tags || (choice.type === "passive" ? "基础修行" : "")}</span>`;
+      button.onclick = () => applyUpgrade(choice);
+      ui.choices.appendChild(button);
     });
   }
   function openUpgrade(initial = false) {
     state.mode = "upgrade"; state.initialUpgrade = initial; ui.rerolls.textContent = state.rerolls;
-    $("rerollButton").disabled = state.rerolls <= 0 && !state.infiniteRerolls; renderUpgradeChoices(); ui.upgrade.classList.remove("hidden"); sound("level");
+    $("rerollButton").disabled = state.rerolls <= 0 && !state.infiniteRerolls;
+    renderUpgradeChoices(); ui.upgrade.classList.remove("hidden"); sound("level");
   }
-  function applyUpgrade(c) {
-    const p = state.player, factor = c.rarity === "epic" ? 1.5 : c.rarity === "rare" ? 1.25 : 1;
-    if (c.type === "weapon") setWeaponLevel(c.id, c.level);
-    if (c.type === "device") setDeviceLevel(c.id, c.level);
-    if (c.type === "passive") {
-      const oldWeight = p.passiveWeights[c.id] || 0;
-      setPassiveLevel(c.id, c.level, oldWeight + factor, c.id === "health");
-    }
-    ui.upgrade.classList.add("hidden"); updateDock();
+  function applyUpgrade(choice) {
+    const factor = choice.rarity === "epic" ? 1.5 : choice.rarity === "rare" ? 1.25 : 1;
+    if (choice.type === "weapon") setWeaponLevel(choice.id, choice.level);
+    if (choice.type === "device") setDeviceLevel(choice.id, choice.level);
+    if (choice.type === "passive") setPassiveLevel(choice.id, choice.level, (state.player.passiveWeights[choice.id] || 0) + factor, choice.id === "health");
+    ui.upgrade.classList.add("hidden");
     if (state.pendingLevels > 0) { state.pendingLevels--; setTimeout(() => openUpgrade(false), 120); }
-    else { state.mode = "playing"; state.started = true; }
+    else { state.mode = "playing"; state.started = true; last = performance.now(); }
   }
 
   function nearest(x, y, max = Infinity, filter = () => true) {
-    let best = null, bd = max;
-    for (const e of state.enemies) if (!e.dead && filter(e)) { const d = Math.hypot(e.x - x, e.y - y); if (d < bd) { bd = d; best = e; } }
-    if (state.boss && !state.boss.dead && filter(state.boss)) { const d = Math.hypot(state.boss.x - x, state.boss.y - y); if (d < bd) best = state.boss; }
+    let best = null, bestDistance = max;
+    for (const enemy of state.enemies) if (!enemy.dead && filter(enemy)) {
+      const distance = Math.hypot(enemy.x - x, enemy.y - y);
+      if (distance < bestDistance) { bestDistance = distance; best = enemy; }
+    }
+    if (state.boss && !state.boss.dead && filter(state.boss)) {
+      const distance = Math.hypot(state.boss.x - x, state.boss.y - y);
+      if (distance < bestDistance) best = state.boss;
+    }
     return best;
   }
-  function shoot(x, y, target, opts = {}) {
+  function shootAngle(x, y, angle, options = {}) {
+    const speed = options.speed || 430;
+    state.projectiles.push({
+      x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: (options.r || 7) * state.player.size,
+      damage: options.damage || 12, life: options.life || 2, color: options.color || "#356f69", pierce: options.pierce || 0,
+      bounces: options.bounces || 0, kind: options.kind || "fishbone", hit: new Set()
+    });
+  }
+  function shoot(x, y, target, options = {}) {
     if (!target) return;
-    const a = Math.atan2(target.y - y, target.x - x), speed = opts.speed || 430;
-    state.projectiles.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: (opts.r || 7) * state.player.size,
-      damage: opts.damage || 12, life: opts.life || 2, color: opts.color || "#e26c9b", pierce: opts.pierce || 0, kind: opts.kind || "yarn", hit: new Set() });
-    sound("shoot");
+    const angle = Math.atan2(target.y - y, target.x - x);
+    shootAngle(x, y, angle, options); sound("shoot");
   }
   function attack(dt) {
-    const p = state.player, atk = p.attackSpeed;
-    Object.keys(state.timers).forEach(k => state.timers[k] -= dt);
-    if (p.weapons.yarn && state.timers.yarn <= 0) {
-      const lv = p.weapons.yarn, t = nearest(p.x, p.y, 650); if (t) shoot(p.x, p.y, t, { damage: (12 + lv * 5) * p.damageMul, speed: 390 + lv * 12, r: 7 + lv * .5 });
-      state.timers.yarn = Math.max(.28, (1.08 - lv * .07) / atk);
+    const player = state.player, attackSpeed = player.attackSpeed;
+    Object.keys(state.timers).forEach(key => state.timers[key] -= dt);
+
+    if (player.weapons.yarn && state.timers.yarn <= 0) {
+      const level = player.weapons.yarn, target = nearest(player.x, player.y, 650);
+      if (target) {
+        const angle = Math.atan2(target.y - player.y, target.x - player.x);
+        const amount = level === 7 ? 5 : 1;
+        for (let index = 0; index < amount; index++) shootAngle(player.x, player.y, angle + (index - (amount - 1) / 2) * .14, { kind: "fishbone", damage: (13 + level * 5) * player.damageMul, speed: 470 + level * 10, r: 7, pierce: 1 + (level / 3 | 0) });
+        sound("shoot");
+      }
+      state.timers.yarn = Math.max(.26, (.92 - level * .055) / attackSpeed);
     }
-    if (p.weapons.fish && state.timers.fish <= 0) {
-      const lv = p.weapons.fish, t = nearest(p.x, p.y, 720); if (t) shoot(p.x, p.y, t, { kind: "fish", color: "#f3d675", damage: (18 + lv * 7) * p.damageMul, speed: 600, r: 6 + lv * .35, pierce: 1 + (lv / 3 | 0) });
-      state.timers.fish = Math.max(.38, (1.6 - lv * .08) / atk);
+    if (player.weapons.fish && state.timers.fish <= 0) {
+      const level = player.weapons.fish, target = nearest(player.x, player.y, 620);
+      if (target) {
+        const angle = Math.atan2(target.y - player.y, target.x - player.x), amount = level === 7 ? 3 : level >= 3 ? 2 : 1;
+        for (let index = 0; index < amount; index++) shootAngle(player.x, player.y, angle + (index - (amount - 1) / 2) * .12, { kind: "leaf", color: "#547a58", damage: (12 + level * 5) * player.damageMul, speed: 420 + level * 8, r: 6, bounces: 2 + (level / 3 | 0) });
+        sound("shoot");
+      }
+      state.timers.fish = Math.max(.34, (1.15 - level * .06) / attackSpeed);
     }
-    if (p.weapons.laser && state.timers.laser <= 0) {
-      const lv = p.weapons.laser, t = nearest(p.x, p.y, 560); if (t) {
-        hitEnemy(t, (17 + lv * 8) * p.damageMul, "laser"); beam(p.x, p.y, t.x, t.y, "#ff5d72");
-        let prev = t; for (let i = 0; i < 1 + (lv / 3 | 0); i++) { const n = nearest(prev.x, prev.y, 150 + lv * 8, e => e !== prev); if (!n) break; hitEnemy(n, (10 + lv * 4) * p.damageMul, "laser"); beam(prev.x, prev.y, n.x, n.y, "#ff8ea0"); prev = n; }
-      } state.timers.laser = Math.max(.45, (1.9 - lv * .08) / atk);
+    if (player.weapons.laser && state.timers.laser <= 0) {
+      const level = player.weapons.laser;
+      let target = nearest(player.x, player.y, 700), previous = { x: player.x, y: player.y };
+      const targetCount = level === 7 ? 6 : 1 + (level / 3 | 0);
+      for (let index = 0; index < targetCount && target; index++) {
+        hitEnemy(target, (8 + level * 4) * player.damageMul, "bell");
+        beam(previous.x, previous.y, target.x, target.y, level === 7 ? "#ad853d" : "#6b5d3c");
+        previous = target;
+        target = nearest(previous.x, previous.y, 190 + level * 8, enemy => enemy !== previous);
+      }
+      state.timers.laser = Math.max(.18, (.72 - level * .045) / attackSpeed);
     }
-    if (p.weapons.paw && state.timers.paw <= 0) {
-      const lv = p.weapons.paw, radius = (78 + lv * 11) * p.size;
-      burst(p.x, p.y, "#ffe7a5", 18, radius); forEachEnemy(e => { if (dist(p, e) < radius + e.r) { hitEnemy(e, (16 + lv * 7) * p.damageMul, "paw"); pushFrom(e, p, 45); } });
-      state.timers.paw = Math.max(.55, (2.6 - lv * .12) / atk);
+    if (player.weapons.paw && state.timers.paw <= 0) {
+      const level = player.weapons.paw, radius = (95 + level * 12) * player.size, waves = level === 7 ? 3 : level >= 4 ? 2 : 1;
+      for (let waveIndex = 0; waveIndex < waves; waveIndex++) state.particles.push({ kind: "claw", x: player.x, y: player.y, r: radius * (1 - waveIndex * .17), color: "#b8422f", life: .34 + waveIndex * .08, max: .34 + waveIndex * .08 });
+      forEachEnemy(enemy => { if (dist(player, enemy) < radius + enemy.r) { hitEnemy(enemy, (21 + level * 8) * player.damageMul, "claw"); pushFrom(enemy, player, 45); } });
+      state.timers.paw = Math.max(.45, (1.48 - level * .08) / attackSpeed);
     }
-    if (p.devices.trap && state.timers.trap <= 0) { state.devices.push({ kind: "trap", x: p.x, y: p.y, life: 10, r: 18, level: p.devices.trap }); state.timers.trap = Math.max(2.4, 6.2 - p.devices.trap * .55); }
-    for (const d of state.devices) if (d.kind === "turret") { d.cooldown -= dt; if (d.cooldown <= 0) { const t = nearest(d.x, d.y, 520); if (t) shoot(d.x, d.y, t, { kind: "spark", color: "#75d7ee", damage: (8 + d.level * 5) * p.damageMul, speed: 520, r: 5 }); d.cooldown = Math.max(.35, 1.2 - d.level * .09); } }
+    if (player.devices.trap && state.timers.trap <= 0) {
+      state.devices.push({ kind: "trap", x: player.x, y: player.y, life: 10, r: 20, level: player.devices.trap });
+      state.timers.trap = Math.max(2.4, 6.2 - player.devices.trap * .55);
+    }
+    for (const device of state.devices) if (device.kind === "turret") {
+      device.cooldown -= dt;
+      if (device.cooldown <= 0) {
+        const target = nearest(device.x, device.y, 520);
+        if (target) shoot(device.x, device.y, target, { kind: "spark", color: "#ad853d", damage: (8 + device.level * 5) * player.damageMul, speed: 520, r: 5 });
+        device.cooldown = Math.max(.35, 1.2 - device.level * .09);
+      }
+    }
   }
 
-  function deployTurret() { state.devices.push({ kind: "turret", x: state.player.x + 48, y: state.player.y + 15, r: 20, level: state.player.devices.turret || 1, cooldown: .5, life: 9999 }); }
-  function beam(x1, y1, x2, y2, color) { state.particles.push({ kind: "beam", x: x1, y: y1, x2, y2, color, life: .13, max: .13 }); }
-  function burst(x, y, color, count = 10, radius = 55) { for (let i = 0; i < count; i++) { const a = i / count * TAU + rand(-.15,.15); state.particles.push({ kind: "dot", x, y, vx: Math.cos(a) * rand(radius, radius * 2), vy: Math.sin(a) * rand(radius, radius * 2), r: rand(2,5), color, life: .35, max: .35 }); } }
-  function pushFrom(e, source, amount) { const a = Math.atan2(e.y - source.y, e.x - source.x); e.x += Math.cos(a) * amount; e.y += Math.sin(a) * amount; }
+  function deployTurret() { state.devices.push({ kind: "turret", x: state.player.x + 50, y: state.player.y + 18, r: 20, level: state.player.devices.turret || 1, cooldown: .5, life: 9999 }); }
+  function syncTurretDevice() {
+    const level = state.player?.devices?.turret || 0;
+    const turret = state.devices.find(device => device.kind === "turret");
+    if (!level) state.devices = state.devices.filter(device => device.kind !== "turret");
+    else if (!turret) deployTurret();
+    else turret.level = level;
+  }
+  function beam(x1, y1, x2, y2, color) { state.particles.push({ kind: "beam", x: x1, y: y1, x2, y2, color, life: .14, max: .14 }); }
+  function burst(x, y, color, count = 10, radius = 55) {
+    for (let index = 0; index < count; index++) {
+      const angle = index / count * TAU + rand(-.15, .15);
+      state.particles.push({ kind: "dot", x, y, vx: Math.cos(angle) * rand(radius, radius * 2), vy: Math.sin(angle) * rand(radius, radius * 2), r: rand(2, 5), color, life: .35, max: .35 });
+    }
+  }
+  function pushFrom(entity, source, amount) { const angle = Math.atan2(entity.y - source.y, entity.x - source.x); entity.x += Math.cos(angle) * amount; entity.y += Math.sin(angle) * amount; }
 
-  const ENEMY_TYPES = {
-    mouse: { name: "灰灰鼠", emoji: "🐭", hp: 28, speed: 67, damage: 9, r: 15, xp: 3, color: "#9b8a91", icon: "mouse" },
-    bug: { name: "花园甲虫", emoji: "🪲", hp: 20, speed: 93, damage: 8, r: 12, xp: 3, color: "#70554d", icon: "bug" },
-    hedgehog: { name: "刺球先锋", emoji: "🦔", hp: 78, speed: 39, damage: 15, r: 20, xp: 7, color: "#9a6949", icon: "hedgehog" },
-    bee: { name: "巡逻蜜蜂", emoji: "🐝", hp: 34, speed: 54, damage: 10, r: 14, xp: 5, color: "#f0be43", icon: "bee", ranged: true },
-    frog: { name: "泡泡蛙", emoji: "🐸", hp: 48, speed: 49, damage: 12, r: 17, xp: 6, color: "#71ac63", icon: "frog", ranged: true },
-    snail: { name: "铁壳蜗牛", emoji: "🐌", hp: 92, speed: 30, damage: 17, r: 22, xp: 8, color: "#78a2b5", icon: "snail" }
-  };
   function spawnEnemy(type, elite = false) {
-    const p = state.player, ang = rand(0, TAU), radius = Math.max(viewW, viewH) * .65 + rand(80, 180), data = ENEMY_TYPES[type];
-    const t = state.time / state.duration, scale = 1 + t * 2.1;
-    state.enemies.push({ ...data, type, x: clamp(p.x + Math.cos(ang) * radius, 30, 2370), y: clamp(p.y + Math.sin(ang) * radius, 30, 1570),
-      hp: data.hp * scale * (elite ? 4.2 : 1), maxHp: data.hp * scale * (elite ? 4.2 : 1), speed: data.speed * (1 + t * .16), damage: data.damage * (1 + t * .65), r: data.r * (elite ? 1.35 : 1), xp: data.xp * (elite ? 7 : 1), elite, shot: rand(1, 3), dead: false, phase: rand(0, TAU) });
+    const player = state.player, angle = rand(0, TAU), radius = Math.max(viewW, viewH) * .62 + rand(80, 180), data = ENEMY_TYPES[type];
+    if (!data) return;
+    const progress = state.duration ? state.time / state.duration : 0, scale = 1 + progress * 2.05;
+    state.enemies.push({
+      ...data, type, x: clamp(player.x + Math.cos(angle) * radius, 40, WORLD_W - 40), y: clamp(player.y + Math.sin(angle) * radius, 40, WORLD_H - 40),
+      hp: data.hp * scale * (elite ? 4.2 : 1), maxHp: data.hp * scale * (elite ? 4.2 : 1), speed: data.speed * (1 + progress * .16),
+      damage: data.damage * (1 + progress * .65), r: data.r * (elite ? 1.35 : 1), xp: data.xp * (elite ? 7 : 1), elite,
+      shot: rand(1, 3), dead: false, phase: rand(0, TAU)
+    });
   }
   function spawnTick(dt) {
-    state.lastSpawn -= dt; if (state.lastSpawn > 0 || state.bossSpawned) return;
-    const t = state.time / state.duration, batch = 1 + (t * 4 | 0) + (state.time > state.duration * .68 ? 2 : 0);
-    const available = t < .18 ? ["mouse","bug"] : t < .42 ? ["mouse","bug","hedgehog","bee"] : ["mouse","bug","hedgehog","bee","frog","snail"];
-    for (let i = 0; i < batch && state.enemies.length < 180; i++) spawnEnemy(pick(available));
-    state.lastSpawn = Math.max(.12, .72 - t * .5);
+    state.lastSpawn -= dt;
+    if (state.lastSpawn > 0 || state.bossSpawned) return;
+    const progress = state.time / state.duration, batch = 1 + (progress * 4 | 0) + (state.time > state.duration * .68 ? 2 : 0);
+    const available = progress < .18 ? ["mouse", "bug"] : progress < .42 ? ["mouse", "bug", "hedgehog", "bee"] : ["mouse", "bug", "hedgehog", "bee", "frog", "snail"];
+    for (let index = 0; index < batch && state.enemies.length < 150; index++) spawnEnemy(pick(available));
+    state.lastSpawn = Math.max(.13, .74 - progress * .5);
   }
-  function forEachEnemy(fn) { for (const e of state.enemies) if (!e.dead) fn(e); if (state.boss && !state.boss.dead) fn(state.boss); }
+  function forEachEnemy(callback) { for (const enemy of state.enemies) if (!enemy.dead) callback(enemy); if (state.boss && !state.boss.dead) callback(state.boss); }
 
   function updateEnemies(dt) {
-    const p = state.player;
-    for (const e of state.enemies) {
-      if (e.dead) continue; e.phase += dt * 4;
-      const d = dist(e, p), a = Math.atan2(p.y - e.y, p.x - e.x);
-      if (e.ranged && d < 310) {
-        e.x -= Math.cos(a) * e.speed * dt * .45; e.y -= Math.sin(a) * e.speed * dt * .45; e.shot -= dt;
-        if (e.shot <= 0) { enemyShot(e.x, e.y, a, e.type === "frog" ? "glob" : "sting", e.damage); e.shot = e.type === "frog" ? 2.7 : 2.1; }
-      } else { e.x += Math.cos(a) * e.speed * dt; e.y += Math.sin(a) * e.speed * dt; }
-      if (d < e.r + p.r) hurtPlayer(e.damage, e.x, e.y);
+    const player = state.player;
+    for (const enemy of state.enemies) {
+      if (enemy.dead) continue;
+      enemy.phase += dt * 4;
+      const distance = dist(enemy, player), angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+      if (enemy.ranged && distance < 310) {
+        enemy.x -= Math.cos(angle) * enemy.speed * dt * .42; enemy.y -= Math.sin(angle) * enemy.speed * dt * .42; enemy.shot -= dt;
+        if (enemy.shot <= 0) { enemyShot(enemy.x, enemy.y, angle, enemy.type === "frog" ? "glob" : "sting", enemy.damage); enemy.shot = enemy.type === "frog" ? 2.7 : 2.1; }
+      } else { enemy.x += Math.cos(angle) * enemy.speed * dt; enemy.y += Math.sin(angle) * enemy.speed * dt; }
+      if (distance < enemy.r + player.r) hurtPlayer(enemy.damage, enemy.x, enemy.y);
     }
-    for (const e of state.enemies) if (e.dead) e.death -= dt;
-    state.enemies = state.enemies.filter(e => !e.dead || e.death > 0);
+    for (const enemy of state.enemies) if (enemy.dead) enemy.death -= dt;
+    state.enemies = state.enemies.filter(enemy => !enemy.dead || enemy.death > 0);
   }
-  function enemyShot(x, y, a, kind, damage) { const speed = kind === "glob" ? 150 : 235; state.enemyShots.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: kind === "glob" ? 9 : 5, life: 4, damage, kind }); }
+  function enemyShot(x, y, angle, kind, damage) {
+    const speed = kind === "glob" ? 150 : 235;
+    state.enemyShots.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: kind === "glob" ? 9 : 5, life: 4, damage, kind });
+  }
   function recordDamage(amount) {
-    const stamp = Math.floor(state.time * 4) / 4, buckets = state.damageBuckets;
-    const lastBucket = buckets[buckets.length - 1];
+    const stamp = Math.floor(state.time * 4) / 4, buckets = state.damageBuckets, lastBucket = buckets[buckets.length - 1];
     if (lastBucket && lastBucket.t === stamp) lastBucket.amount += amount; else buckets.push({ t: stamp, amount });
     while (buckets.length && buckets[0].t < state.time - 10.25) buckets.shift();
   }
-  function hitEnemy(e, raw, kind) {
-    if (!e || e.dead) return; const crit = Math.random() < state.player.crit, dmg = raw * (crit ? 1.85 : 1);
-    e.hp -= dmg; state.damage += dmg; recordDamage(dmg); state.highHit = Math.max(state.highHit, dmg); textPop(e.x, e.y - e.r, Math.round(dmg), crit ? "#ffcf58" : "#fff", crit ? 18 : 12);
-    if (kind === "laser" && Math.random() < .25) e.slow = .35;
-    if (e.hp <= 0) killEnemy(e);
+  function hitEnemy(enemy, raw, kind) {
+    if (!enemy || enemy.dead) return;
+    const critical = Math.random() < state.player.crit, damage = raw * (critical ? 1.85 : 1);
+    enemy.hp -= damage; state.damage += damage; recordDamage(damage); state.highHit = Math.max(state.highHit, damage);
+    textPop(enemy.x, enemy.y - enemy.r, Math.round(damage), critical ? "#d39b35" : "#f8f1e3", critical ? 18 : 12);
+    if (kind === "bell" && Math.random() < .25) enemy.slow = .35;
+    if (enemy.hp <= 0) killEnemy(enemy);
   }
-  function killEnemy(e) {
-    e.dead = true; e.death = .18; state.kills++; if (e.elite) state.elites++;
-    if (e === state.boss) {
-      state.coins += 80;
-      burst(e.x, e.y, "#ffe37a", 40, 140);
-      toast("🏆 暴走扫地机停止运转！", 2600);
-      ui.bossHud.classList.add("hidden");
-      if (!state.dev) setTimeout(() => endGame(true), 1800);
+  function killEnemy(enemy) {
+    enemy.dead = true; enemy.death = .3; state.kills++; if (enemy.elite) state.elites++;
+    if (enemy === state.boss) {
+      state.coins += 80; burst(enemy.x, enemy.y, "#ad853d", 44, 150); toast("泼墨狸将收笔认输！", 2800); ui.bossHud.classList.add("hidden");
+      if (!state.dev) setTimeout(() => endGame(true), 2200);
       return;
     }
-    const count = e.elite ? 4 : 1; for (let i = 0; i < count; i++) state.pickups.push({ kind: "xp", x: e.x + rand(-12,12), y: e.y + rand(-12,12), value: e.xp / count, r: e.elite ? 8 : 5 });
-    if (Math.random() < (e.elite ? .75 : .08)) state.pickups.push({ kind: "coin", x: e.x, y: e.y, value: e.elite ? 18 : pick([1,2,3]), r: 7 });
-    if (Math.random() < .012) state.pickups.push({ kind: "heart", x: e.x, y: e.y, value: 14, r: 9 });
-    burst(e.x, e.y, e.color, e.elite ? 18 : 6, e.elite ? 80 : 35);
+    const count = enemy.elite ? 4 : 1;
+    for (let index = 0; index < count; index++) state.pickups.push({ kind: "xp", x: enemy.x + rand(-12, 12), y: enemy.y + rand(-12, 12), value: enemy.xp / count, r: enemy.elite ? 8 : 5 });
+    if (Math.random() < (enemy.elite ? .75 : .08)) state.pickups.push({ kind: "coin", x: enemy.x, y: enemy.y, value: enemy.elite ? 18 : pick([1, 2, 3]), r: 7 });
+    if (Math.random() < .012) state.pickups.push({ kind: "heart", x: enemy.x, y: enemy.y, value: 14, r: 9 });
+    burst(enemy.x, enemy.y, enemy.elite ? "#b8422f" : "#2a2d29", enemy.elite ? 18 : 7, enemy.elite ? 80 : 36);
   }
-  function hurtPlayer(raw, sx, sy) {
-    const p = state.player; if (state.invincible || p.invuln > 0 || state.mode !== "playing") return;
-    const dmg = Math.max(1, raw * (1 - p.armor)); p.hp -= dmg; p.invuln = .62; state.taken += dmg; state.shake = 8; state.flash = .15; sound("hurt"); textPop(p.x, p.y - 30, `-${Math.round(dmg)}`, "#ff7c78", 17); pushFrom(p, { x: sx, y: sy }, 20);
-    if (p.hp <= 0) endGame(false);
+  function hurtPlayer(raw, sourceX, sourceY) {
+    const player = state.player;
+    if (state.invincible || player.invuln > 0 || state.mode !== "playing") return;
+    const damage = Math.max(1, raw * (1 - player.armor));
+    player.hp -= damage; player.invuln = .62; state.taken += damage; state.shake = 8; state.flash = .15; sound("hurt");
+    textPop(player.x, player.y - 30, `-${Math.round(damage)}`, "#d44f42", 17); pushFrom(player, { x: sourceX, y: sourceY }, 20);
+    if (player.hp <= 0) endGame(false);
   }
 
   function spawnBoss() {
     if (state.boss && !state.boss.dead) return state.boss;
-    state.bossSpawned = true; state.enemies.length = Math.min(state.enemies.length, 18); const p = state.player;
-    const bossHp = state.dev ? 1200 : 3200;
-    state.boss = { x: clamp(p.x + 360, 80, 2320), y: clamp(p.y, 100, 1500), r: 46, hp: bossHp, maxHp: bossHp, damage: 20, speed: 50, phase: 1, attack: 1.5, summon: 5, dead: false, kind: "boss" };
-    ui.bossHud.classList.remove("hidden"); ui.bossName.textContent = "暴走扫地机 · 第一阶段"; toast("⚠️ Boss 登场：暴走扫地机！", 3000); sound("boss"); state.shake = 14;
+    state.bossSpawned = true; state.enemies.length = Math.min(state.enemies.length, 16);
+    const player = state.player, bossHp = state.dev ? 1400 : BOSS.hp;
+    state.boss = { ...BOSS, x: clamp(player.x + 360, 100, WORLD_W - 100), y: clamp(player.y, 110, WORLD_H - 110), r: 55, hp: bossHp, maxHp: bossHp, phase: 1, attack: 1.5, summon: 6, dead: false, kind: "boss" };
+    ui.bossHud.classList.remove("hidden"); ui.bossName.textContent = "泼墨狸将 · 起笔"; toast("Boss 登场：泼墨狸将！看清朱红落笔区", 3200); sound("boss"); state.shake = 14;
     return state.boss;
   }
   function updateBoss(dt) {
-    const b = state.boss; if (!b || b.dead) return; const p = state.player, d = dist(b,p), a = Math.atan2(p.y-b.y,p.x-b.x);
-    const nextPhase = b.hp < b.maxHp * .48 ? 2 : 1;
-    if (nextPhase !== b.phase) { b.phase = nextPhase; b.speed = 72; ui.bossName.textContent = "暴走扫地机 · 狂暴清扫"; toast("Boss 狂暴！避开红色清扫区", 2400); sound("boss"); }
-    b.x += Math.cos(a) * b.speed * dt * (d > 150 ? 1 : -.25); b.y += Math.sin(a) * b.speed * dt * (d > 150 ? 1 : -.25);
-    if (d < b.r + p.r) hurtPlayer(b.damage, b.x, b.y);
-    b.attack -= dt; b.summon -= dt;
-    if (b.attack <= 0) {
-      if (b.phase === 1) { for (let i=0;i<10;i++) enemyShot(b.x,b.y,i/10*TAU,"dust",14); b.attack=2.2; }
-      else { state.hazards.push({ x:p.x+rand(-80,80), y:p.y+rand(-80,80), r:58, warn:1.1, life:2.2, damage:19 }); b.attack=.85; }
+    const boss = state.boss;
+    if (!boss || boss.dead) return;
+    const player = state.player, distance = dist(boss, player), angle = Math.atan2(player.y - boss.y, player.x - boss.x);
+    const nextPhase = boss.hp < boss.maxHp * .48 ? 2 : 1;
+    if (nextPhase !== boss.phase) {
+      boss.phase = nextPhase; boss.speed = 72; ui.bossName.textContent = "泼墨狸将 · 朱印狂挥"; toast("第二阶段：毛笔落地会留下危险墨痕", 2600); sound("boss"); state.shake = 12;
     }
-    if (b.summon <= 0) { for(let i=0;i<(b.phase===1?3:5);i++) spawnEnemy(pick(["mouse","bug","bee"])); b.summon=b.phase===1?7:4.5; }
+    boss.x += Math.cos(angle) * boss.speed * dt * (distance > 190 ? 1 : -.25);
+    boss.y += Math.sin(angle) * boss.speed * dt * (distance > 190 ? 1 : -.25);
+    if (distance < boss.r + player.r) hurtPlayer(boss.damage, boss.x, boss.y);
+    boss.attack -= dt; boss.summon -= dt;
+    if (boss.attack <= 0) {
+      if (boss.phase === 1) {
+        const aim = Math.atan2(player.y - boss.y, player.x - boss.x);
+        for (let index = -4; index <= 4; index++) enemyShot(boss.x, boss.y, aim + index * .16, "dust", 14);
+        boss.attack = 2.15;
+      } else {
+        state.hazards.push({ x: player.x + rand(-85, 85), y: player.y + rand(-85, 85), r: 62, warn: 1.05, life: 2.2, damage: 19 });
+        boss.attack = .88;
+      }
+    }
+    if (boss.summon <= 0) { for (let index = 0; index < (boss.phase === 1 ? 2 : 4); index++) spawnEnemy(pick(["mouse", "bug"])); boss.summon = boss.phase === 1 ? 8 : 5; }
   }
 
   function updateProjectiles(dt) {
-    for (const q of state.projectiles) {
-      q.x += q.vx*dt; q.y += q.vy*dt; q.life -= dt;
-      forEachEnemy(e => { if (q.life > 0 && !q.hit.has(e) && dist(q,e) < q.r+e.r) { q.hit.add(e); hitEnemy(e,q.damage,q.kind); if(q.pierce>0) q.pierce--; else q.life=0; } });
+    for (const projectile of state.projectiles) {
+      projectile.x += projectile.vx * dt; projectile.y += projectile.vy * dt; projectile.life -= dt;
+      forEachEnemy(enemy => {
+        if (projectile.life <= 0 || projectile.hit.has(enemy) || dist(projectile, enemy) >= projectile.r + enemy.r) return;
+        projectile.hit.add(enemy); hitEnemy(enemy, projectile.damage, projectile.kind);
+        if (projectile.bounces > 0) {
+          projectile.bounces--;
+          const next = nearest(enemy.x, enemy.y, 220, candidate => !projectile.hit.has(candidate));
+          if (next) { const angle = Math.atan2(next.y - enemy.y, next.x - enemy.x), speed = Math.hypot(projectile.vx, projectile.vy); projectile.x = enemy.x; projectile.y = enemy.y; projectile.vx = Math.cos(angle) * speed; projectile.vy = Math.sin(angle) * speed; }
+          else projectile.life = 0;
+        } else if (projectile.pierce > 0) projectile.pierce--; else projectile.life = 0;
+      });
     }
-    state.projectiles = state.projectiles.filter(q=>q.life>0);
-    for (const q of state.enemyShots) { q.x+=q.vx*dt;q.y+=q.vy*dt;q.life-=dt;if(dist(q,state.player)<q.r+state.player.r){hurtPlayer(q.damage,q.x,q.y);q.life=0;} }
-    state.enemyShots=state.enemyShots.filter(q=>q.life>0);
-    for (const h of state.hazards) { h.warn-=dt;h.life-=dt;if(h.warn<=0&&dist(h,state.player)<h.r+state.player.r) hurtPlayer(h.damage,h.x,h.y); }
-    state.hazards=state.hazards.filter(h=>h.life>0);
-    for (const d of state.devices) {
-      d.life-=dt; if(d.kind==="trap") { const target=nearest(d.x,d.y,45); if(target){const radius=(72+d.level*10)*state.player.size;burst(d.x,d.y,"#f7a84b",22,radius);forEachEnemy(e=>{if(dist(d,e)<radius+e.r)hitEnemy(e,(24+d.level*12)*state.player.damageMul,"trap")});d.life=0;} }
-      if(d.kind==="turret") d.level=state.player.devices.turret||d.level;
+    state.projectiles = state.projectiles.filter(projectile => projectile.life > 0);
+    for (const shot of state.enemyShots) {
+      shot.x += shot.vx * dt; shot.y += shot.vy * dt; shot.life -= dt;
+      if (dist(shot, state.player) < shot.r + state.player.r) { hurtPlayer(shot.damage, shot.x, shot.y); shot.life = 0; }
     }
-    state.devices=state.devices.filter(d=>d.life>0);
+    state.enemyShots = state.enemyShots.filter(shot => shot.life > 0);
+    for (const hazard of state.hazards) { hazard.warn -= dt; hazard.life -= dt; if (hazard.warn <= 0 && dist(hazard, state.player) < hazard.r + state.player.r) hurtPlayer(hazard.damage, hazard.x, hazard.y); }
+    state.hazards = state.hazards.filter(hazard => hazard.life > 0);
+    for (const device of state.devices) {
+      device.life -= dt;
+      if (device.kind === "trap") {
+        const target = nearest(device.x, device.y, 48);
+        if (target) {
+          const radius = (82 + device.level * 11) * state.player.size;
+          state.particles.push({ kind: "claw", x: device.x, y: device.y, r: radius, color: "#356f69", life: .36, max: .36 });
+          forEachEnemy(enemy => { if (dist(device, enemy) < radius + enemy.r) { hitEnemy(enemy, (22 + device.level * 11) * state.player.damageMul, "umbrella"); pushFrom(enemy, device, 38); } });
+          device.life = 0;
+        }
+      }
+      if (device.kind === "turret") device.level = state.player.devices.turret || device.level;
+    }
+    state.devices = state.devices.filter(device => device.life > 0);
   }
 
   function updatePickups(dt) {
-    const p=state.player;
-    for(const o of state.pickups){
-      const d=dist(o,p); if(["xp","coin","heart"].includes(o.kind)&&d<p.pickup){const a=Math.atan2(p.y-o.y,p.x-o.x);o.x+=Math.cos(a)*Math.max(130,500-d)*dt;o.y+=Math.sin(a)*Math.max(130,500-d)*dt;}
-      if(d<p.r+o.r+6){
-        if(o.kind==="xp"){p.xp+=o.value;checkLevel();}
-        if(o.kind==="coin"){state.coins+=o.value;sound("coin");}
-        if(o.kind==="heart")p.hp=Math.min(p.maxHp,p.hp+o.value);
-        if(o.kind==="chest"){state.coins+=25; state.pendingLevels++; toast("宝箱：猫币 +25，并获得一次强化！"); setTimeout(()=>openUpgrade(false),100);}
-        if(o.kind==="merchant")openShop();
-        if(o.kind==="event")openEvent();
-        o.dead=true;
+    const player = state.player;
+    for (const item of state.pickups) {
+      const distance = dist(item, player);
+      if (["xp", "coin", "heart"].includes(item.kind) && distance < player.pickup) {
+        const angle = Math.atan2(player.y - item.y, player.x - item.x), speed = Math.max(130, 500 - distance);
+        item.x += Math.cos(angle) * speed * dt; item.y += Math.sin(angle) * speed * dt;
+      }
+      if (distance >= player.r + item.r + 6) continue;
+      if (item.kind === "xp") { player.xp += item.value; checkLevel(); }
+      if (item.kind === "coin") { state.coins += item.value; sound("coin"); }
+      if (item.kind === "heart") player.hp = Math.min(player.maxHp, player.hp + item.value);
+      if (item.kind === "chest") { state.coins += 25; state.pendingLevels++; toast("宝箱：铜钱 +25，并获得一次强化"); setTimeout(() => openUpgrade(false), 100); }
+      if (item.kind === "merchant") openShop();
+      if (item.kind === "event") openEvent();
+      item.dead = true;
+    }
+    state.pickups = state.pickups.filter(item => !item.dead);
+  }
+  function checkLevel() {
+    const player = state.player;
+    while (player.xp >= player.nextXp) { player.xp -= player.nextXp; player.level++; player.nextXp = levelXpRequirement(player.level); state.pendingLevels++; }
+    if (state.pendingLevels > 0 && state.mode === "playing") { state.pendingLevels--; openUpgrade(false); }
+  }
+  function spawnObject(kind, label) {
+    const player = state.player, angle = rand(0, TAU), radius = rand(260, 420);
+    state.pickups.push({ kind, x: clamp(player.x + Math.cos(angle) * radius, 80, WORLD_W - 80), y: clamp(player.y + Math.sin(angle) * radius, 80, WORLD_H - 80), r: 22, label });
+    toast(`${label} 已出现在附近`, 2400);
+  }
+  function schedules() {
+    const progress = state.time / state.duration, schedule = state.schedules;
+    if (!schedule.chest1 && progress > .2) { schedule.chest1 = true; spawnObject("chest", "宝箱"); }
+    if (!schedule.elite1 && progress > .29) { schedule.elite1 = true; for (let index = 0; index < 2; index++) spawnEnemy(pick(["hedgehog", "bee"]), true); toast("赤印精英出现！"); }
+    if (!schedule.merchant && progress > .4) { schedule.merchant = true; spawnObject("merchant", "神秘商人"); }
+    if (!schedule.chest2 && progress > .54) { schedule.chest2 = true; spawnObject("chest", "稀有宝箱"); }
+    if (!schedule.event && progress > .62) { schedule.event = true; spawnObject("event", "庭院奇遇"); }
+    if (!schedule.elite2 && progress > .7) { schedule.elite2 = true; for (let index = 0; index < 3; index++) spawnEnemy(pick(["snail", "frog", "bee"]), true); toast("高压精英潮来袭！"); }
+    if (!state.bossSpawned && state.time >= state.duration - (state.duration < 120 ? 30 : 75)) spawnBoss();
+  }
+
+  function openShop() {
+    state.mode = "shop"; ui.shop.classList.remove("hidden"); ui.shopCoins.textContent = Math.floor(state.coins);
+    const pool = chooseUpgrades().slice(0, 3); pool.push({ type: "heal", id: "heal", name: "温热鱼汤", icon: "汤", desc: "恢复 45% 最大生命", level: 1, rarity: "common" });
+    ui.shopChoices.innerHTML = "";
+    pool.forEach((choice, index) => {
+      const price = 18 + index * 10, button = document.createElement("button");
+      button.className = `upgrade-card ${choice.rarity || ""}`;
+      button.innerHTML = `<span class="upgrade-icon">${choice.icon}</span><h3>${choice.name}</h3><p>${choice.desc}</p><span class="price">铜钱 ${price}</span>`;
+      button.onclick = () => {
+        if (state.coins < price) { toast("铜钱不够"); return; }
+        state.coins -= price;
+        if (choice.type === "heal") state.player.hp = Math.min(state.player.maxHp, state.player.hp + state.player.maxHp * .45); else applyShopUpgrade(choice);
+        button.disabled = true; button.style.opacity = .45; ui.shopCoins.textContent = Math.floor(state.coins);
+      };
+      ui.shopChoices.appendChild(button);
+    });
+  }
+  function applyShopUpgrade(choice) {
+    if (choice.type === "weapon") setWeaponLevel(choice.id, choice.level);
+    if (choice.type === "device") setDeviceLevel(choice.id, choice.level);
+    if (choice.type === "passive") setPassiveLevel(choice.id, choice.level, (state.player.passiveWeights[choice.id] || 0) + 1, choice.id === "health");
+  }
+  function closeShop() { ui.shop.classList.add("hidden"); state.mode = "playing"; }
+  function openEvent() { state.mode = "event"; ui.event.classList.remove("hidden"); }
+  function resolveEvent(choice) {
+    const player = state.player;
+    if (choice === "help") { player.hp = Math.min(player.maxHp, player.hp + player.maxHp * .35); player.runtime.speed *= 1.12; recalculatePlayerStats(); toast("莲花祝福：移速提升"); }
+    else { player.hp = Math.max(1, player.hp * .75); player.runtime.damage *= 1.25; recalculatePlayerStats(); toast("摘下墨蕊：伤害大幅提升"); }
+    ui.event.classList.add("hidden"); state.mode = "playing";
+  }
+
+  function movePlayer(dt) {
+    const player = state.player;
+    let x = 0, y = 0;
+    if (keys.has("KeyA") || keys.has("ArrowLeft")) x--;
+    if (keys.has("KeyD") || keys.has("ArrowRight")) x++;
+    if (keys.has("KeyW") || keys.has("ArrowUp")) y--;
+    if (keys.has("KeyS") || keys.has("ArrowDown")) y++;
+    x += joy.x; y += joy.y;
+    const length = Math.hypot(x, y);
+    player.moving = length > .05;
+    if (player.moving) { x /= Math.max(1, length); y /= Math.max(1, length); player.x = clamp(player.x + x * player.speed * dt, 30, WORLD_W - 30); player.y = clamp(player.y + y * player.speed * dt, 30, WORLD_H - 30); player.facing = x < 0 ? -1 : x > 0 ? 1 : player.facing || 1; }
+    player.invuln = Math.max(0, player.invuln - dt);
+  }
+  function phase() { const progress = state.time / state.duration; if (state.bossSpawned) return "最终决战"; if (progress < .25) return "快速成型"; if (progress < .62) return "中压构筑"; return "高压怪潮"; }
+  function update(dt) {
+    if (state.mode !== "playing" || (state.dev && state.devLabOpen && state.devRunPaused)) return;
+    state.time += dt;
+    movePlayer(dt); attack(dt); spawnTick(dt); updateEnemies(dt); updateBoss(dt); updateProjectiles(dt); updatePickups(dt); if (!state.dev) schedules(); updateFx(dt);
+    state.cam.x = lerp(state.cam.x, state.player.x, .08); state.cam.y = lerp(state.cam.y, state.player.y, .08); state.shake = Math.max(0, state.shake - dt * 30); state.flash = Math.max(0, state.flash - dt); updateHud();
+  }
+  function updateFx(dt) {
+    for (const particle of state.particles) { particle.life -= dt; if (particle.vx) { particle.x += particle.vx * dt; particle.y += particle.vy * dt; particle.vx *= .94; particle.vy *= .94; } }
+    state.particles = state.particles.filter(particle => particle.life > 0);
+    for (const text of state.texts) { text.life -= dt; text.y -= 28 * dt; }
+    state.texts = state.texts.filter(text => text.life > 0);
+  }
+  function textPop(x, y, text, color = "#fff", size = 12) { state.texts.push({ x, y, text, color, size, life: .75, max: .75 }); }
+
+  function updateHud() {
+    if (!state.player) return;
+    const player = state.player;
+    ui.healthBar.style.width = `${clamp(player.hp / player.maxHp * 100, 0, 100)}%`; ui.healthText.textContent = `${Math.ceil(player.hp)} / ${Math.ceil(player.maxHp)}`;
+    ui.xpBar.style.width = `${player.xp / player.nextXp * 100}%`; ui.levelText.textContent = player.level; ui.coinText.textContent = Math.floor(state.coins);
+    ui.timerText.textContent = fmt(Math.max(0, state.duration - state.time)); ui.phaseLabel.textContent = phase();
+    if (state.boss) ui.bossBar.style.width = `${clamp(state.boss.hp / state.boss.maxHp * 100, 0, 100)}%`;
+  }
+  function updateDock() {
+    if (!state.player) return;
+    ui.dock.innerHTML = "";
+    Object.entries(state.player.weapons).forEach(([id, level]) => ui.dock.insertAdjacentHTML("beforeend", `<div class="weapon-slot" title="${WEAPONS[id].name}">${WEAPONS[id].icon}<small>${level}</small></div>`));
+    Object.entries(state.player.devices).forEach(([id, level]) => ui.dock.insertAdjacentHTML("beforeend", `<div class="weapon-slot" title="${DEVICES[id].name}">${DEVICES[id].icon}<small>${level}</small></div>`));
+  }
+  function buildSummary() {
+    const items = [];
+    Object.entries(state.player.weapons).forEach(([id, level]) => items.push([`${WEAPONS[id].icon} ${WEAPONS[id].name}`, `Lv.${level}`]));
+    Object.entries(state.player.devices).forEach(([id, level]) => items.push([`${DEVICES[id].icon} ${DEVICES[id].name}`, `Lv.${level}`]));
+    Object.entries(state.player.passives).forEach(([id, level]) => items.push([`${PASSIVES[id].icon} ${PASSIVES[id].name}`, `Lv.${level}`]));
+    return items;
+  }
+  function pause() { if (state.mode !== "playing") return; state.mode = "paused"; ui.build.innerHTML = buildSummary().map(item => `<div class="build-item"><b>${item[0]}</b>${item[1]}</div>`).join("") || "尚未获得额外强化"; ui.pause.classList.remove("hidden"); }
+  function resume() { if (state.mode !== "paused") return; ui.pause.classList.add("hidden"); state.mode = "playing"; last = performance.now(); }
+  function endGame(win) {
+    if (state.mode === "result") return;
+    state.mode = "result"; state.won = win; ui.hud.classList.add("hidden"); ui.joystick.classList.add("hidden"); ui.pause.classList.add("hidden");
+    const survived = Math.min(state.time, state.duration), reward = Math.floor(state.coins * (win ? 1 : .45) + state.kills * .08 + (win ? 80 : 0));
+    if (!state.dev) { profile.best = Math.max(profile.best, Math.floor(survived)); profile.coins += reward; if (win) profile.wins++; saveProfile(); }
+    $("resultBadge").textContent = win ? "胜" : "止"; $("resultKicker").textContent = win ? "墨战落幕" : "本次试炼结束"; $("resultTitle").textContent = win ? "旧庭重归宁静" : "这一笔尚未写完";
+    $("resultLine").textContent = state.dev ? "DEV 测试数据未写入正式存档。" : win ? "最后一笔落下，群墨归纸。" : "保留经验，重新整备再入庭院。";
+    $("resultStats").innerHTML = [["存活", fmt(survived)], ["击散", state.kills], ["最高伤害", Math.round(state.highHit)], ["获得铜钱", reward]].map(item => `<div class="stat"><b>${item[1]}</b><small>${item[0]}</small></div>`).join("");
+    $("resultBuild").innerHTML = buildSummary().map(item => `<span>${item[0]} ${item[1]}</span>`).join("");
+    ui.result.classList.remove("hidden"); window.dispatchEvent(new CustomEvent("meow-run-ended")); if (win) sound("win");
+  }
+
+  function objectId(object, prefix) { if (!object._domId) object._domId = `${prefix}-${++uid}`; return object._domId; }
+  function ensureNode(id, className, html = "") {
+    let node = nodes.get(id);
+    if (!node) { node = document.createElement("div"); node.dataset.nodeId = id; world.appendChild(node); nodes.set(id, node); }
+    node.className = `world-object ${className}`;
+    if (html && node.dataset.htmlKey !== html) { node.innerHTML = html; node.dataset.htmlKey = html; }
+    return node;
+  }
+  function place(node, x, y, scale = 1, rotation = 0) { node.style.transform = `translate3d(${x}px,${y}px,0) translate(-50%,-50%) rotate(${rotation}rad) scale(${scale})`; }
+  function renderScene() {
+    const active = new Set(), shakeX = state.shake ? rand(-state.shake, state.shake) : 0, shakeY = state.shake ? rand(-state.shake, state.shake) : 0;
+    const cameraX = state.player ? state.cam.x : WORLD_W / 2, cameraY = state.player ? state.cam.y : WORLD_H / 2;
+    world.style.transform = `translate3d(${viewW / 2 - cameraX + shakeX}px,${viewH / 2 - cameraY + shakeY}px,0)`;
+    damageFlash.style.opacity = String(Math.min(.75, state.flash * 4));
+    if (!state.player) return;
+
+    const playerId = "player"; active.add(playerId);
+    const playerNode = ensureNode(playerId, `entity player${state.player.moving ? " moving" : ""}${state.player.invuln > 0 ? " invulnerable" : ""}`, `<img src="${CHARACTER.art}" alt="" draggable="false">`);
+    place(playerNode, state.player.x, state.player.y, state.player.facing || 1, 0);
+
+    for (const enemy of state.enemies) {
+      const id = objectId(enemy, "enemy"); active.add(id);
+      const size = Math.max(48, enemy.r * (enemy.elite ? 4.6 : 4.1));
+      const node = ensureNode(id, `entity enemy ${enemy.art_variant || ""}${enemy.elite ? " elite" : ""}${enemy.dead ? " dying" : ""}`, `<img src="${enemy.art}" alt="" draggable="false">`);
+      node.style.width = `${size}px`; node.style.height = `${size}px`; place(node, enemy.x, enemy.y + Math.sin(enemy.phase) * 2);
+    }
+    if (state.boss && !state.boss.dead) {
+      const id = "boss"; active.add(id);
+      const node = ensureNode(id, `entity boss phase-${state.boss.phase}`, `<img src="${BOSS.art}" alt="" draggable="false">`);
+      place(node, state.boss.x, state.boss.y);
+    }
+    for (const projectile of state.projectiles) {
+      const id = objectId(projectile, "projectile"); active.add(id);
+      const angle = Math.atan2(projectile.vy, projectile.vx), node = ensureNode(id, `projectile ${projectile.kind}`);
+      node.style.width = `${Math.max(10, projectile.r * 2.6)}px`; node.style.height = `${Math.max(7, projectile.r * 1.2)}px`; place(node, projectile.x, projectile.y, 1, angle);
+    }
+    for (const shot of state.enemyShots) {
+      const id = objectId(shot, "enemy-shot"); active.add(id); const node = ensureNode(id, `enemy-shot ${shot.kind}`); place(node, shot.x, shot.y);
+    }
+    for (const hazard of state.hazards) {
+      const id = objectId(hazard, "hazard"); active.add(id); const node = ensureNode(id, `hazard${hazard.warn <= 0 ? " active" : ""}`); node.style.width = `${hazard.r * 2}px`; node.style.height = `${hazard.r * 2}px`; place(node, hazard.x, hazard.y);
+    }
+    for (const item of state.pickups) {
+      const id = objectId(item, "pickup"); active.add(id); const objectKind = ["xp", "coin", "heart"].includes(item.kind) ? item.kind : "object"; const node = ensureNode(id, `pickup ${objectKind}`, objectKind === "object" ? `<span>${item.label || item.kind}</span>` : item.kind === "heart" ? "<span>心</span>" : ""); place(node, item.x, item.y);
+    }
+    for (const device of state.devices) {
+      const id = objectId(device, "device"); active.add(id); const node = ensureNode(id, `device ${device.kind}`, `<span>${device.kind === "turret" ? "刃" : "伞"}</span>`); place(node, device.x, device.y);
+    }
+    for (const particle of state.particles) {
+      const id = objectId(particle, "particle"); active.add(id);
+      if (particle.kind === "beam") {
+        const length = Math.hypot(particle.x2 - particle.x, particle.y2 - particle.y), angle = Math.atan2(particle.y2 - particle.y, particle.x2 - particle.x), node = ensureNode(id, "ink-beam");
+        node.style.width = `${length}px`; node.style.color = particle.color; node.style.opacity = String(particle.life / particle.max); node.style.transform = `translate3d(${particle.x}px,${particle.y}px,0) rotate(${angle}rad)`;
+      } else if (particle.kind === "claw") {
+        const node = ensureNode(id, "claw-wave"); node.style.width = `${particle.r * 2}px`; node.style.height = `${particle.r * 2}px`; node.style.borderColor = particle.color; place(node, particle.x, particle.y);
+      } else {
+        const node = ensureNode(id, "ink-burst"); node.style.width = `${particle.r * 2}px`; node.style.height = `${particle.r * 2}px`; node.style.color = particle.color; node.style.opacity = String(particle.life / particle.max); place(node, particle.x, particle.y);
       }
     }
-    state.pickups=state.pickups.filter(o=>!o.dead);
-  }
-  function checkLevel(){const p=state.player;while(p.xp>=p.nextXp){p.xp-=p.nextXp;p.level++;p.nextXp=levelXpRequirement(p.level);state.pendingLevels++;}if(state.pendingLevels>0&&state.mode==="playing"){state.pendingLevels--;openUpgrade(false);}}
-  function spawnObject(kind, label){const p=state.player,a=rand(0,TAU),r=rand(260,420);state.pickups.push({kind,x:clamp(p.x+Math.cos(a)*r,80,2320),y:clamp(p.y+Math.sin(a)*r,80,1520),r:22,label});toast(`${label} 已出现在附近`,2400);}
-
-  function schedules() {
-    const t=state.time/state.duration,s=state.schedules;
-    if(!s.chest1&&t>.2){s.chest1=true;spawnObject("chest","🎁 宝箱");}
-    if(!s.elite1&&t>.29){s.elite1=true;for(let i=0;i<2;i++)spawnEnemy(pick(["hedgehog","bee"]),true);toast("⚠️ 精英怪出现！");}
-    if(!s.merchant&&t>.4){s.merchant=true;spawnObject("merchant","🛒 流浪猫商人");}
-    if(!s.chest2&&t>.54){s.chest2=true;spawnObject("chest","🎁 稀有宝箱");}
-    if(!s.event&&t>.62){s.event=true;spawnObject("event","🐝 随机事件");}
-    if(!s.elite2&&t>.7){s.elite2=true;for(let i=0;i<3;i++)spawnEnemy(pick(["snail","frog","bee"]),true);toast("⚠️ 高压精英潮！");}
-    if(!state.bossSpawned&&state.time>=state.duration-(state.duration<120?30:75))spawnBoss();
+    for (const text of state.texts) {
+      const id = objectId(text, "text"); active.add(id); const node = ensureNode(id, "float-text", `<span>${text.text}</span>`); node.style.color = text.color; node.style.fontSize = `${text.size}px`; node.style.opacity = String(text.life / text.max); place(node, text.x, text.y);
+    }
+    for (const [id, node] of nodes) if (!active.has(id)) { node.remove(); nodes.delete(id); }
   }
 
-  function openShop(){state.mode="shop";ui.shop.classList.remove("hidden");ui.shopCoins.textContent=Math.floor(state.coins);const pool=chooseUpgrades().slice(0,3);pool.push({type:"heal",id:"heal",name:"暖呼呼牛奶",icon:"🥛",desc:"恢复 45% 最大生命",level:1,rarity:"common"});ui.shopChoices.innerHTML="";pool.forEach((c,i)=>{const price=18+i*10,b=document.createElement("button");b.className=`upgrade-card ${c.rarity||""}`;b.innerHTML=`<span class="upgrade-icon">${c.icon}</span><h3>${c.name}</h3><p>${c.desc}</p><span class="price">🪙 ${price}</span>`;b.onclick=()=>{if(state.coins<price){toast("猫币不够喵！");return;}state.coins-=price;if(c.type==="heal")state.player.hp=Math.min(state.player.maxHp,state.player.hp+state.player.maxHp*.45);else applyShopUpgrade(c);b.disabled=true;b.style.opacity=.45;ui.shopCoins.textContent=Math.floor(state.coins);};ui.shopChoices.appendChild(b);});}
-  function applyShopUpgrade(c){const old=state.mode;state.mode="shop";if(c.type==="weapon")setWeaponLevel(c.id,c.level);if(c.type==="device")setDeviceLevel(c.id,c.level);if(c.type==="passive"){const fake={...c,rarity:"common"};state.mode="upgrade";applyUpgrade(fake);state.mode=old;ui.upgrade.classList.add("hidden");}updateDock();}
-  function closeShop(){ui.shop.classList.add("hidden");state.mode="playing";}
-  function openEvent(){state.mode="event";ui.event.classList.remove("hidden");}
-  function resolveEvent(choice){const p=state.player;if(choice==="help"){p.hp=Math.min(p.maxHp,p.hp+p.maxHp*.35);p.runtime.speed*=1.12;recalculatePlayerStats();toast("小蜜蜂送你顺风花粉：移速提升！");}else{p.hp=Math.max(1,p.hp*.75);p.runtime.damage*=1.25;recalculatePlayerStats();toast("甜蜜的代价：伤害大幅提升！");}ui.event.classList.add("hidden");state.mode="playing";}
-
-  function movePlayer(dt){const p=state.player;let x=0,y=0;if(keys.has("KeyA")||keys.has("ArrowLeft"))x--;if(keys.has("KeyD")||keys.has("ArrowRight"))x++;if(keys.has("KeyW")||keys.has("ArrowUp"))y--;if(keys.has("KeyS")||keys.has("ArrowDown"))y++;x+=joy.x;y+=joy.y;const len=Math.hypot(x,y);if(len>.05){x/=Math.max(1,len);y/=Math.max(1,len);p.x=clamp(p.x+x*p.speed*dt,25,2375);p.y=clamp(p.y+y*p.speed*dt,25,1575);p.walk=(p.walk||0)+dt*10;}p.invuln=Math.max(0,p.invuln-dt);}
-  function phase(){const t=state.time/state.duration;if(state.bossSpawned)return"最终决战";if(t<.25)return"快速成型";if(t<.62)return"中压构筑";return"高压怪潮";}
-  function update(dt){if(state.mode!=="playing"||(state.dev&&state.devLabOpen&&state.devRunPaused))return;state.time+=dt;if(!state.dev&&state.time>=state.duration+35&&!state.boss)endGame(false);movePlayer(dt);attack(dt);spawnTick(dt);updateEnemies(dt);updateBoss(dt);updateProjectiles(dt);updatePickups(dt);if(!state.dev)schedules();updateFx(dt);state.cam.x=lerp(state.cam.x,state.player.x,.08);state.cam.y=lerp(state.cam.y,state.player.y,.08);state.shake=Math.max(0,state.shake-dt*30);state.flash=Math.max(0,state.flash-dt);updateHud();}
-  function updateFx(dt){for(const p of state.particles){p.life-=dt;if(p.vx){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=.94;p.vy*=.94;}}state.particles=state.particles.filter(p=>p.life>0);for(const t of state.texts){t.life-=dt;t.y-=28*dt;}state.texts=state.texts.filter(t=>t.life>0);}
-  function textPop(x,y,text,color="#fff",size=12){state.texts.push({x,y,text,color,size,life:.75,max:.75});}
-
-  function updateHud(){if(!state.player)return;const p=state.player;ui.healthBar.style.width=`${clamp(p.hp/p.maxHp*100,0,100)}%`;ui.healthText.textContent=`${Math.ceil(p.hp)} / ${Math.ceil(p.maxHp)}`;ui.xpBar.style.width=`${p.xp/p.nextXp*100}%`;ui.levelText.textContent=p.level;ui.coinText.textContent=Math.floor(state.coins);ui.timerText.textContent=fmt(Math.max(0,state.duration-state.time));ui.phaseLabel.textContent=phase();if(state.boss)ui.bossBar.style.width=`${clamp(state.boss.hp/state.boss.maxHp*100,0,100)}%`;}
-  function updateDock(){if(!state.player)return;ui.dock.innerHTML="";Object.entries(state.player.weapons).forEach(([id,lv])=>ui.dock.insertAdjacentHTML("beforeend",`<div class="weapon-slot" title="${WEAPONS[id].name}">${WEAPONS[id].icon}<small>${lv}</small></div>`));Object.entries(state.player.devices).forEach(([id,lv])=>ui.dock.insertAdjacentHTML("beforeend",`<div class="weapon-slot" title="${DEVICES[id].name}">${DEVICES[id].icon}<small>${lv}</small></div>`));}
-  function buildSummary(){const p=state.player,items=[];Object.entries(p.weapons).forEach(([id,lv])=>items.push([WEAPONS[id].icon+" "+WEAPONS[id].name,"Lv."+lv]));Object.entries(p.devices).forEach(([id,lv])=>items.push([DEVICES[id].icon+" "+DEVICES[id].name,"Lv."+lv]));Object.entries(p.passives).forEach(([id,lv])=>items.push([PASSIVES[id].icon+" "+PASSIVES[id].name,"Lv."+lv]));return items;}
-  function pause(){if(state.mode!=="playing")return;state.mode="paused";ui.build.innerHTML=buildSummary().map(x=>`<div class="build-item"><b>${x[0]}</b>${x[1]}</div>`).join("")||"还没有额外强化";ui.pause.classList.remove("hidden");}
-  function resume(){if(state.mode!=="paused")return;ui.pause.classList.add("hidden");state.mode="playing";last=performance.now();}
-  function endGame(win){if(state.mode==="result")return;state.mode="result";state.won=win;ui.hud.classList.add("hidden");ui.joystick.classList.add("hidden");ui.pause.classList.add("hidden");const survived=Math.min(state.time,state.duration);const reward=Math.floor(state.coins*(win?1:.45)+state.kills*.08+(win?80:0));if(!state.dev){profile.best=Math.max(profile.best,Math.floor(survived));profile.coins+=reward;if(win)profile.wins++;saveProfile();}$("resultBadge").textContent=win?"🏆":"🐾";$("resultKicker").textContent=win?"冒险完成":"本次冒险结束";$("resultTitle").textContent=win?"庭院恢复平静！":"差一点就成功了！";$("resultLine").textContent=state.dev?"DEV 测试数据未写入正式存档。":win?"“喵！今天的罐头可以安心吃啦。”":"保留成长，拍拍爪子马上再来。";$("resultStats").innerHTML=[["存活",fmt(survived)],["击败",state.kills],["最高伤害",Math.round(state.highHit)],["获得猫币",reward]].map(x=>`<div class="stat"><b>${x[1]}</b><small>${x[0]}</small></div>`).join("");$("resultBuild").innerHTML=buildSummary().map(x=>`<span>${x[0]} ${x[1]}</span>`).join("");ui.result.classList.remove("hidden");window.dispatchEvent(new CustomEvent("meow-run-ended"));if(win)sound("win");}
-
-  function worldToScreen(x,y){return{x:x-state.cam.x+viewW/2,y:y-state.cam.y+viewH/2};}
-  function draw(){ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,viewW,viewH);if(!state.player){drawMenuBg();return;}const sx=state.shake?rand(-state.shake,state.shake):0,sy=state.shake?rand(-state.shake,state.shake):0;ctx.save();ctx.translate(sx,sy);drawGround();drawLandmarks();drawHazards();drawPickups();drawDevices();drawEntities();drawProjectiles();drawParticles();ctx.restore();if(state.flash>0){ctx.fillStyle=`rgba(255,75,70,${state.flash*.8})`;ctx.fillRect(0,0,viewW,viewH);}}
-  function drawMenuBg(){ctx.fillStyle="#cfe9a8";ctx.fillRect(0,0,viewW,viewH);for(let i=0;i<28;i++){const x=(i*173+60)%viewW,y=(i*97+25)%viewH;flower(x,y,5+(i%3),i%2?"#f5b8c0":"#ffe179");}}
-  function drawGround(){ctx.fillStyle="#b9dfa2";ctx.fillRect(0,0,viewW,viewH);const left=state.cam.x-viewW/2,top=state.cam.y-viewH/2;ctx.strokeStyle="rgba(104,156,86,.11)";ctx.lineWidth=1;for(let x=Math.floor(left/80)*80;x<left+viewW+80;x+=80){const s=worldToScreen(x,0).x;ctx.beginPath();ctx.moveTo(s,0);ctx.lineTo(s,viewH);ctx.stroke();}for(let y=Math.floor(top/80)*80;y<top+viewH+80;y+=80){const s=worldToScreen(0,y).y;ctx.beginPath();ctx.moveTo(0,s);ctx.lineTo(viewW,s);ctx.stroke();}const a=worldToScreen(0,0),b=worldToScreen(2400,1600);ctx.strokeStyle="#728b5f";ctx.lineWidth=18;ctx.strokeRect(a.x,a.y,b.x-a.x,b.y-a.y);}
-  function drawLandmarks(){for(const l of state.landmarks){const s=worldToScreen(l.x,l.y);if(s.x<-100||s.x>viewW+100||s.y<-100||s.y>viewH+100)continue;if(l.kind==="flower")flower(s.x,s.y,7,pickStable(l.x)%2?"#fff0a1":"#f4a8b6");else if(l.kind==="rock"){ctx.fillStyle="#9eaa9a";blob(s.x,s.y,14,10);}else if(l.kind==="bush"){ctx.fillStyle="#75b46a";circle(s.x,s.y,18);ctx.fillStyle="#91c976";circle(s.x-8,s.y-5,10);}else if(l.kind==="pond"){ctx.fillStyle="#8dd1d2";ellipse(s.x,s.y,85,52);ctx.strokeStyle="#e9d89c";ctx.lineWidth=7;ctx.stroke();}else if(l.kind==="tree"){ctx.fillStyle="#8b6646";ctx.fillRect(s.x-12,s.y,24,70);ctx.fillStyle="#5ea55f";circle(s.x,s.y-20,62);ctx.fillStyle="#77ba68";circle(s.x-28,s.y-12,36);}else if(l.kind==="shed"){ctx.fillStyle="#e8b36d";ctx.fillRect(s.x-55,s.y-35,110,85);ctx.fillStyle="#c85d54";ctx.beginPath();ctx.moveTo(s.x-70,s.y-35);ctx.lineTo(s.x,s.y-85);ctx.lineTo(s.x+70,s.y-35);ctx.fill();}}
-  }
-  const pickStable=n=>Math.abs(Math.sin(n*12.9898)*43758.5453)|0;
-  function drawHazards(){for(const h of state.hazards){const s=worldToScreen(h.x,h.y);ctx.beginPath();ctx.arc(s.x,s.y,h.r,0,TAU);ctx.fillStyle=h.warn>0?`rgba(232,78,74,${.15+Math.sin(performance.now()/80)*.08})`:`rgba(191,57,64,.46)`;ctx.fill();ctx.strokeStyle="#eb5d59";ctx.lineWidth=3;ctx.stroke();}}
-  function drawPickups(){for(const o of state.pickups){const s=worldToScreen(o.x,o.y),bob=Math.sin(performance.now()/220+o.x)*3;if(o.kind==="xp"){ctx.fillStyle="#7cc9f0";diamond(s.x,s.y+bob,o.r);}else if(o.kind==="coin"){ctx.fillStyle="#f6ca4e";circle(s.x,s.y+bob,o.r);ctx.fillStyle="#fff0a1";circle(s.x-2,s.y+bob-2,o.r*.35);}else if(o.kind==="heart")iconText("♥",s.x,s.y+bob,"#ef6967",18);else{ctx.fillStyle="rgba(255,255,255,.85)";roundRect(s.x-33,s.y-37+bob,66,22,9,true);ctx.fillStyle="#453940";ctx.font="bold 11px sans-serif";ctx.textAlign="center";ctx.fillText(o.label,s.x,s.y-22+bob);iconText(o.kind==="chest"?"🎁":o.kind==="merchant"?"🛒":"🐝",s.x,s.y+bob,"#fff",30);}}}
-  function drawDevices(){for(const d of state.devices){const s=worldToScreen(d.x,d.y);if(d.kind==="turret"){ctx.fillStyle="#68bdd2";roundRect(s.x-16,s.y-8,32,28,7,true);ctx.fillStyle="#f56e72";circle(s.x,s.y-13,8);ctx.strokeStyle="#4d6970";ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(s.x,s.y-8);ctx.lineTo(s.x+16,s.y-27);ctx.stroke();}else{ctx.fillStyle="#e99745";circle(s.x,s.y,17);ctx.fillStyle="#fff2c7";ctx.fillRect(s.x-10,s.y-4,20,8);}}}
-  function drawEntities(){for(const e of state.enemies)if(!e.dead)drawEnemy(e);if(state.boss&&!state.boss.dead)drawBoss(state.boss);drawCat(state.player);}
-  function drawCat(p){const s=worldToScreen(p.x,p.y),blink=p.invuln>0&&((performance.now()/70|0)%2===0);if(blink)return;ctx.save();ctx.translate(s.x,s.y);ctx.rotate(Math.sin(p.walk||0)*.04);ctx.strokeStyle="#c66e2e";ctx.lineWidth=7;ctx.lineCap="round";ctx.beginPath();ctx.arc(-15,4,24,.1,1.6);ctx.stroke();ctx.fillStyle="#f3a047";circle(0,3,19);ctx.beginPath();ctx.moveTo(-14,-10);ctx.lineTo(-10,-27);ctx.lineTo(0,-13);ctx.moveTo(14,-10);ctx.lineTo(10,-27);ctx.lineTo(0,-13);ctx.fill();ctx.fillStyle="#fff4dc";ellipse(0,8,12,9);ctx.fillStyle="#3f3137";circle(-7,0,2.3);circle(7,0,2.3);ctx.fillStyle="#e9757b";ctx.beginPath();ctx.moveTo(-3,6);ctx.lineTo(3,6);ctx.lineTo(0,10);ctx.fill();ctx.restore();}
-  function drawEnemy(e){const s=worldToScreen(e.x,e.y);ctx.save();ctx.translate(s.x,s.y+Math.sin(e.phase)*2);if(e.elite){ctx.strokeStyle="#ba6de0";ctx.lineWidth=5;ctx.beginPath();ctx.arc(0,0,e.r+6,0,TAU);ctx.stroke();}ctx.fillStyle=e.color;if(e.type==="mouse"){circle(0,2,e.r);circle(-10,-11,e.r*.45);circle(10,-11,e.r*.45);ctx.fillStyle="#342d31";circle(-5,0,2);circle(5,0,2);ctx.strokeStyle="#df9c9c";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,7);ctx.lineTo(18,9);ctx.moveTo(0,7);ctx.lineTo(-18,9);ctx.stroke();}else if(e.type==="bug"){ellipse(0,0,e.r*.75,e.r);ctx.strokeStyle="#3a2926";ctx.lineWidth=3;for(let y=-7;y<8;y+=7){ctx.beginPath();ctx.moveTo(-8,y);ctx.lineTo(8,y);ctx.stroke();}}else if(e.type==="hedgehog"){ctx.beginPath();for(let i=0;i<16;i++){const a=i/16*TAU,r=i%2?e.r:e.r+9;ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);}ctx.fill();ctx.fillStyle="#e9c191";circle(4,3,e.r*.62);}else if(e.type==="bee"){ellipse(0,0,e.r,e.r*.72);ctx.fillStyle="#3d3434";ctx.fillRect(-5,-10,5,20);ctx.fillRect(6,-8,4,16);ctx.fillStyle="rgba(230,250,255,.7)";ellipse(-8,-13,10,6);ellipse(8,-13,10,6);}else if(e.type==="frog"){circle(0,2,e.r);circle(-9,-10,7);circle(9,-10,7);ctx.fillStyle="#fff";circle(-9,-11,4);circle(9,-11,4);ctx.fillStyle="#333";circle(-9,-11,2);circle(9,-11,2);}else{ellipse(-4,6,e.r*.85,e.r*.6);ctx.fillStyle="#c99b65";circle(5,-4,e.r*.7);ctx.fillStyle="#50453e";circle(12,-8,2);}if(e.elite){ctx.fillStyle="#fff";iconText("★",0,-e.r-10,"#ffe25f",12);}ctx.restore();}
-  function drawBoss(b){const s=worldToScreen(b.x,b.y);ctx.save();ctx.translate(s.x,s.y);ctx.rotate(performance.now()/500*(b.phase===2?2:1));ctx.fillStyle="#8c708f";circle(0,0,b.r);ctx.fillStyle="#66506b";for(let i=0;i<8;i++){ctx.rotate(TAU/8);roundRect(25,-8,35,16,6,true);}ctx.rotate(-performance.now()/500*(b.phase===2?2:1)-TAU);ctx.fillStyle="#e6dcea";roundRect(-26,-22,52,44,14,true);ctx.fillStyle="#ef5e72";circle(-11,-4,5);circle(11,-4,5);ctx.fillStyle="#504050";ctx.fillRect(-13,10,26,5);ctx.restore();}
-  function drawProjectiles(){for(const q of state.projectiles){const s=worldToScreen(q.x,q.y);if(q.kind==="fish")iconText("◇",s.x,s.y,q.color,q.r*2.4);else{ctx.fillStyle=q.color;circle(s.x,s.y,q.r);}}for(const q of state.enemyShots){const s=worldToScreen(q.x,q.y);ctx.fillStyle=q.kind==="glob"?"#78ad62":"#e75b63";circle(s.x,s.y,q.r);}}
-  function drawParticles(){for(const p of state.particles){if(p.kind==="beam"){const a=worldToScreen(p.x,p.y),b=worldToScreen(p.x2,p.y2);ctx.globalAlpha=p.life/p.max;ctx.strokeStyle=p.color;ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.globalAlpha=1;}else{const s=worldToScreen(p.x,p.y);ctx.globalAlpha=p.life/p.max;ctx.fillStyle=p.color;circle(s.x,s.y,p.r);ctx.globalAlpha=1;}}for(const t of state.texts){const s=worldToScreen(t.x,t.y);ctx.globalAlpha=t.life/t.max;ctx.fillStyle=t.color;ctx.font=`900 ${t.size}px sans-serif`;ctx.textAlign="center";ctx.fillText(t.text,s.x,s.y);ctx.globalAlpha=1;}}
-  function flower(x,y,r,color){ctx.fillStyle=color;for(let i=0;i<5;i++){const a=i/5*TAU;circle(x+Math.cos(a)*r,y+Math.sin(a)*r,r*.65);}ctx.fillStyle="#d9a83c";circle(x,y,r*.55);}
-  function circle(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fill();}
-  function ellipse(x,y,rx,ry){ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,TAU);ctx.fill();}
-  function blob(x,y,rx,ry){ellipse(x,y,rx,ry);}
-  function diamond(x,y,r){ctx.beginPath();ctx.moveTo(x,y-r);ctx.lineTo(x+r,y);ctx.lineTo(x,y+r);ctx.lineTo(x-r,y);ctx.closePath();ctx.fill();}
-  function roundRect(x,y,w,h,r,fill=false){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill)ctx.fill();}
-  function iconText(t,x,y,color,size){ctx.fillStyle=color;ctx.font=`${size}px "Segoe UI Emoji",sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(t,x,y);ctx.textBaseline="alphabetic";}
-
-  function closeGameplayOverlays() {
-    [ui.upgrade, ui.shop, ui.event, ui.pause].forEach(el => el.classList.add("hidden"));
-  }
-  function setPlayerLevel(level) {
-    const p = state.player; if (!p) return;
-    p.level = clamp(Math.round(Number(level) || 1), 1, 999); p.xp = 0; p.nextXp = levelXpRequirement(p.level); state.pendingLevels = 0; updateHud();
-  }
+  function clearNormalEnemies() { state.enemies = state.enemies.filter(enemy => enemy.elite); }
+  function clearAllEnemies() { state.enemies = []; state.enemyShots = []; state.hazards = []; }
+  function clearBattlefield() { clearAllEnemies(); state.projectiles = []; state.pickups = []; state.particles = []; state.texts = []; }
+  function spawnMixed(count) { const ids = Object.keys(ENEMY_TYPES); for (let index = 0; index < count; index++) spawnEnemy(pick(ids)); }
+  function spawnEnemyBatch(type, count, elite = false) { if (!ENEMY_TYPES[type]) return; for (let index = 0; index < count; index++) spawnEnemy(type, elite); }
+  function triggerEliteWave() { for (let index = 0; index < 4; index++) spawnEnemy(pick(Object.keys(ENEMY_TYPES)), true); }
+  function triggerChest() { spawnObject("chest", "宝箱"); }
+  function setStage(progress, bossNow = false) { state.time = clamp(progress, 0, 1) * state.duration; if (bossNow) spawnBoss(); }
+  function forceBossPhase2() { const boss = state.boss || spawnBoss(); boss.hp = Math.min(boss.hp, boss.maxHp * .45); boss.phase = 2; }
+  function setBossHealth(ratio) { const boss = state.boss || spawnBoss(); boss.hp = clamp(Number(ratio), 0, 1) * boss.maxHp; }
+  function killBossForTest() { const boss = state.boss || spawnBoss(); hitEnemy(boss, boss.hp + 1, "dev"); }
+  function healFull() { if (state.player) state.player.hp = state.player.maxHp; }
+  function setPlayerLevel(level) { const player = state.player; player.level = Math.max(1, Math.round(level)); player.nextXp = levelXpRequirement(player.level); player.xp = clamp(player.xp || 0, 0, player.nextXp - 1); }
   function setPlayerValue(key, value) {
-    const p = state.player; if (!p) return; const n = Number(value); if (!Number.isFinite(n)) return;
-    if (key === "level") return setPlayerLevel(n);
-    if (key === "hp") { p.hp = clamp(n, 0, p.maxHp); updateHud(); return; }
-    if (key === "coins") { state.coins = Math.max(0, n); updateHud(); return; }
-    if (key === "rerolls") { state.rerolls = Math.max(0, Math.round(n)); ui.rerolls.textContent = state.rerolls; return; }
-    if (!["maxHp","speed","damageMul","attackSpeed","crit","armor","pickup"].includes(key)) return;
-    const minimum = ["maxHp","speed","damageMul","attackSpeed","pickup"].includes(key) ? .01 : 0;
-    p.base[key] = Math.max(minimum, n); recalculatePlayerStats(); updateHud();
-  }
-  function healFull() { if (state.player) { state.player.hp = state.player.maxHp; updateHud(); } }
-  function spawnMixed(count) { const ids = Object.keys(ENEMY_TYPES); for (let i = 0; i < count; i++) spawnEnemy(pick(ids)); }
-  function spawnEnemyBatch(type, count, elite = false) { if (!ENEMY_TYPES[type]) return; for (let i = 0; i < count; i++) spawnEnemy(type, elite); }
-  function clearNormalEnemies() { state.enemies = []; }
-  function clearAllEnemies() { state.enemies = []; state.boss = null; state.bossSpawned = false; ui.bossHud.classList.add("hidden"); }
-  function clearBattlefield() {
-    clearAllEnemies(); state.projectiles = []; state.enemyShots = []; state.hazards = []; state.pickups = []; state.devices = [];
-    state.particles = []; state.texts = []; if (state.player?.devices?.turret) syncTurretDevice();
-  }
-  function forceBossPhase2() {
-    const b = spawnBoss(); b.hp = Math.min(b.hp, b.maxHp * .47); b.phase = 2; b.speed = 72;
-    ui.bossName.textContent = "暴走扫地机 · 狂暴清扫"; updateHud(); return b;
-  }
-  function setBossHealth(percent) {
-    const b = spawnBoss(), ratio = clamp(Number(percent) || 0, .001, 1); b.hp = b.maxHp * ratio;
-    if (ratio < .48) forceBossPhase2(); else { b.phase = 1; b.speed = 50; ui.bossName.textContent = "暴走扫地机 · 第一阶段"; }
+    const player = state.player, number = Number(value); if (!Number.isFinite(number)) return;
+    if (key === "level") setPlayerLevel(number); else if (key === "hp") player.hp = clamp(number, 0, player.maxHp); else if (key === "coins") state.coins = Math.max(0, number); else if (key === "rerolls") state.rerolls = Math.max(0, Math.round(number));
+    else if (["maxHp", "speed", "damageMul", "attackSpeed", "crit", "armor", "pickup", "size"].includes(key)) { player.base[key] = number; recalculatePlayerStats(); }
     updateHud();
   }
-  function killBossForTest() { const b = spawnBoss(); hitEnemy(b, b.hp + 1, "dev"); }
-  function markSchedulesForFraction(fraction) {
-    state.schedules.chest1 = fraction >= .2; state.schedules.elite1 = fraction >= .29; state.schedules.merchant = fraction >= .4;
-    state.schedules.chest2 = fraction >= .54; state.schedules.event = fraction >= .62; state.schedules.elite2 = fraction >= .7;
-  }
-  function setStage(fraction, boss = false) {
-    const f = clamp(fraction, 0, .99); state.time = state.duration * f; markSchedulesForFraction(f); state.lastSpawn = 0;
-    if (boss) spawnBoss(); updateHud();
-  }
-  function triggerChest() { state.coins += 25; state.pendingLevels++; toast("DEV 宝箱：猫币 +25，并获得一次强化！"); state.pendingLevels--; openUpgrade(false); }
-  function triggerEliteWave() { for (let i = 0; i < 8; i++) spawnEnemy(pick(Object.keys(ENEMY_TYPES)), true); toast("DEV：精英潮已生成"); }
-  function resetDevPlayer() {
-    const old = state.player, pos = old ? { x: old.x, y: old.y } : { x: 1200, y: 800 };
-    state.player = createPlayer(true); state.player.x = pos.x; state.player.y = pos.y; state.devices = [];
-    state.timers = { yarn: 0, fish: 0, laser: 0, paw: 0, trap: 2, turret: 0 }; updateDock(); updateHud();
-  }
-  function applyLevelMaps({ weapons = {}, passives = {}, devices = {} } = {}) {
-    Object.keys(WEAPONS).forEach(id => setWeaponLevel(id, weapons[id] || 0));
-    Object.keys(PASSIVES).forEach(id => setPassiveLevel(id, passives[id] || 0));
-    Object.keys(DEVICES).forEach(id => setDeviceLevel(id, devices[id] || 0));
-  }
-  function preparePreset(fraction, level) {
-    clearBattlefield(); resetDevPlayer(); state.damage = 0; state.taken = 0; state.highHit = 0; state.kills = 0; state.damageBuckets = [];
-    state.coins = 200; state.rerolls = 9; setPlayerLevel(level); setStage(fraction); state.player.hp = state.player.maxHp;
-  }
+  function resetDevPlayer() { if (!state.dev) return; const x = state.player.x, y = state.player.y; state.player = createPlayer(true); state.player.x = x; state.player.y = y; state.devices = []; recalculatePlayerStats(); updateDock(); updateHud(); }
   function applyPreset(name) {
-    if (!state.dev) return;
-    if (name === "early") { preparePreset(.1, 4); applyLevelMaps({ weapons:{yarn:2}, passives:{power:1,speed:1} }); spawnMixed(10); }
-    if (name === "mid") { preparePreset(.4, 13); applyLevelMaps({ weapons:{yarn:4,fish:3,laser:2}, passives:{power:2,haste:2,health:1,magnet:1}, devices:{turret:2} }); spawnMixed(38); }
-    if (name === "late") { preparePreset(.75, 26); applyLevelMaps({ weapons:{yarn:6,fish:5,laser:5,paw:4}, passives:{power:3,haste:3,health:2,speed:2,crit:2,size:2,armor:2}, devices:{turret:3,trap:3} }); spawnMixed(85); }
-    if (name === "boss") { preparePreset(.84, 25); applyLevelMaps({ weapons:{yarn:5,fish:5,laser:4,paw:4}, passives:{power:3,haste:2,health:2,crit:2,armor:2}, devices:{turret:3,trap:2} }); state.player.hp=state.player.maxHp; spawnBoss(); }
-    if (name === "max") { preparePreset(.75, 40); applyLevelMaps({ weapons:Object.fromEntries(Object.keys(WEAPONS).map(id=>[id,WEAPONS[id].max])), passives:Object.fromEntries(Object.keys(PASSIVES).map(id=>[id,PASSIVES[id].max])), devices:Object.fromEntries(Object.keys(DEVICES).map(id=>[id,DEVICES[id].max])) }); healFull(); }
-    if (name === "stress") { preparePreset(.75, 45); state.player.base.maxHp=1000;state.player.base.damageMul=3;state.player.base.attackSpeed=1.8;state.player.base.armor=.55;recalculatePlayerStats();applyLevelMaps({ weapons:Object.fromEntries(Object.keys(WEAPONS).map(id=>[id,WEAPONS[id].max])), passives:Object.fromEntries(Object.keys(PASSIVES).map(id=>[id,PASSIVES[id].max])), devices:Object.fromEntries(Object.keys(DEVICES).map(id=>[id,DEVICES[id].max])) });healFull();spawnMixed(150); }
-    updateDock(); updateHud(); toast(`PRESET: ${name.toUpperCase()}`);
+    const levels = { early: 3, mid: 10, late: 18, boss: 22, max: 35, stress: 60 };
+    setPlayerLevel(levels[name] || 1);
+    if (["mid", "late", "boss", "max", "stress"].includes(name)) { setWeaponLevel("fish", 3); setWeaponLevel("paw", 3); }
+    if (["late", "boss", "max", "stress"].includes(name)) { setWeaponLevel("laser", 5); setPassiveLevel("power", 3); setPassiveLevel("haste", 3); setDeviceLevel("turret", 3); }
+    if (["max", "stress"].includes(name)) { Object.keys(WEAPONS).forEach(id => setWeaponLevel(id, 7)); Object.keys(PASSIVES).forEach(id => setPassiveLevel(id, PASSIVES[id].max)); Object.keys(DEVICES).forEach(id => setDeviceLevel(id, DEVICES[id].max)); }
+    if (name === "boss") spawnBoss();
+    if (name === "stress") { state.player.base.maxHp = 1000; state.player.base.damageMul = 3; recalculatePlayerStats(); spawnMixed(120); }
+    healFull(); updateDock(); updateHud(); toast(`PRESET: ${name.toUpperCase()}`);
   }
   function getBuildSnapshot() {
-    const p = state.player; return { version:1, base:{...p.base}, hp:p.hp, level:p.level, xp:p.xp, weapons:{...p.weapons}, passives:{...p.passives}, passiveWeights:{...p.passiveWeights}, devices:{...p.devices}, coins:state.coins, rerolls:state.rerolls };
+    const player = state.player;
+    return { version: 2, base: { ...player.base }, hp: player.hp, level: player.level, xp: player.xp, weapons: { ...player.weapons }, passives: { ...player.passives }, passiveWeights: { ...player.passiveWeights }, devices: { ...player.devices }, coins: state.coins, rerolls: state.rerolls };
   }
   function loadBuildSnapshot(data) {
     if (!data || typeof data !== "object") throw new Error("Build 必须是 JSON 对象");
-    const pos = { x:state.player.x, y:state.player.y }; resetDevPlayer(); const p = state.player; p.x=pos.x;p.y=pos.y;
-    if (data.base && typeof data.base === "object") for (const key of ["maxHp","speed","damageMul","attackSpeed","crit","size","armor","pickup"]) if (Number.isFinite(Number(data.base[key]))) p.base[key]=Number(data.base[key]);
-    setPlayerLevel(data.level || 1); p.xp=clamp(Number(data.xp)||0,0,p.nextXp-1);
-    Object.keys(WEAPONS).forEach(id=>setWeaponLevel(id,Number(data.weapons?.[id])||0));
-    Object.keys(PASSIVES).forEach(id=>setPassiveLevel(id,Number(data.passives?.[id])||0,Number(data.passiveWeights?.[id])||Number(data.passives?.[id])||0));
-    Object.keys(DEVICES).forEach(id=>setDeviceLevel(id,Number(data.devices?.[id])||0));
-    recalculatePlayerStats(); p.hp=clamp(Number.isFinite(Number(data.hp))?Number(data.hp):p.maxHp,0,p.maxHp);
-    state.coins=Math.max(0,Number(data.coins)||0);state.rerolls=Math.max(0,Math.round(Number(data.rerolls)||0));updateDock();updateHud();
+    resetDevPlayer(); const player = state.player;
+    if (data.base && typeof data.base === "object") for (const key of ["maxHp", "speed", "damageMul", "attackSpeed", "crit", "size", "armor", "pickup"]) if (Number.isFinite(Number(data.base[key]))) player.base[key] = Number(data.base[key]);
+    setPlayerLevel(data.level || 1); player.xp = clamp(Number(data.xp) || 0, 0, player.nextXp - 1);
+    Object.keys(WEAPONS).forEach(id => setWeaponLevel(id, Number(data.weapons?.[id]) || 0)); Object.keys(PASSIVES).forEach(id => setPassiveLevel(id, Number(data.passives?.[id]) || 0, Number(data.passiveWeights?.[id]) || Number(data.passives?.[id]) || 0)); Object.keys(DEVICES).forEach(id => setDeviceLevel(id, Number(data.devices?.[id]) || 0));
+    recalculatePlayerStats(); player.hp = clamp(Number.isFinite(Number(data.hp)) ? Number(data.hp) : player.maxHp, 0, player.maxHp); state.coins = Math.max(0, Number(data.coins) || 0); state.rerolls = Math.max(0, Math.round(Number(data.rerolls) || 0)); updateDock(); updateHud();
   }
   function getDevStats() {
-    const now=state.time,b=state.damageBuckets||[],one=b.reduce((s,x)=>s+(x.t>=now-1?x.amount:0),0),ten=b.reduce((s,x)=>s+(x.t>=now-10?x.amount:0),0);
-    return { fps:state.fps||0,enemies:state.enemies.filter(e=>!e.dead).length+(state.boss&&!state.boss.dead?1:0),projectiles:state.projectiles.length,enemyShots:state.enemyShots.length,pickups:state.pickups.length,level:state.player.level,kills:state.kills,damage:state.damage,taken:state.taken,highHit:state.highHit,dps:one,dps10:ten/10 };
+    const current = state.time, buckets = state.damageBuckets || [], one = buckets.reduce((sum, bucket) => sum + (bucket.t >= current - 1 ? bucket.amount : 0), 0), ten = buckets.reduce((sum, bucket) => sum + (bucket.t >= current - 10 ? bucket.amount : 0), 0);
+    return { fps: state.fps || 0, enemies: state.enemies.filter(enemy => !enemy.dead).length + (state.boss && !state.boss.dead ? 1 : 0), projectiles: state.projectiles.length, enemyShots: state.enemyShots.length, pickups: state.pickups.length, level: state.player.level, kills: state.kills, damage: state.damage, taken: state.taken, highHit: state.highHit, dps: one, dps10: ten / 10 };
   }
-  function setDevLabOpen(open) { if (!state.dev) return; state.devLabOpen=Boolean(open);state.devRunPaused=Boolean(open); }
-  function setDevPaused(paused) { state.devRunPaused=Boolean(paused);if(!paused&&state.mode!=="playing"){closeGameplayOverlays();state.mode="playing";} }
+  function setDevLabOpen(open) { if (!state.dev) return; state.devLabOpen = Boolean(open); state.devRunPaused = Boolean(open); }
+  function setDevPaused(paused) { state.devRunPaused = Boolean(paused); if (!paused && state.mode !== "playing") state.mode = "playing"; }
 
   const devApi = {
-    setLabOpen:setDevLabOpen,setPaused:setDevPaused,setSpeed:v=>state.simSpeed=clamp(Number(v)||1,.5,4),setInvincible:v=>state.invincible=Boolean(v),setInfiniteRerolls:v=>state.infiniteRerolls=Boolean(v),
-    setPlayerValue,healFull,addLevels:n=>setPlayerLevel(state.player.level+n),setWeaponLevel,setPassiveLevel,setDeviceLevel,
-    spawnEnemy:spawnEnemyBatch,spawnMixed,clearNormalEnemies,clearAllEnemies,spawnBoss,forceBossPhase2,setBossHealth,killBoss:killBossForTest,
-    openUpgrade:()=>openUpgrade(false),openShop,triggerChest,openEvent,triggerEliteWave,setStage,
-    applyPreset,getStats:getDevStats,getBuild:getBuildSnapshot,loadBuild:loadBuildSnapshot,resetPlayer:resetDevPlayer,resetRun:()=>resetGame(true),clearBattlefield,
-    getConfig:()=>({WEAPONS,PASSIVES,DEVICES,ENEMY_TYPES}),getState:()=>state
+    setLabOpen: setDevLabOpen, setPaused: setDevPaused, setSpeed: value => state.simSpeed = clamp(Number(value) || 1, .5, 4), setInvincible: value => state.invincible = Boolean(value), setInfiniteRerolls: value => state.infiniteRerolls = Boolean(value),
+    setPlayerValue, healFull, addLevels: amount => setPlayerLevel(state.player.level + amount), setWeaponLevel, setPassiveLevel, setDeviceLevel,
+    spawnEnemy: spawnEnemyBatch, spawnMixed, clearNormalEnemies, clearAllEnemies, spawnBoss, forceBossPhase2, setBossHealth, killBoss: killBossForTest,
+    openUpgrade: () => openUpgrade(false), openShop, triggerChest, openEvent, triggerEliteWave, setStage, applyPreset, getStats: getDevStats,
+    getBuild: getBuildSnapshot, loadBuild: loadBuildSnapshot, resetPlayer: resetDevPlayer, resetRun: () => resetGame(true), clearBattlefield,
+    getConfig: () => ({ WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES }), getState: () => state
   };
 
-  function loop(now){const rawDt=Math.min(.05,(now-last)/1000);last=now;if(state.player)state.fps=lerp(state.fps||1,1/Math.max(.001,rawDt),.08);update(rawDt*(state.simSpeed||1));draw();requestAnimationFrame(loop);}requestAnimationFrame(loop);
+  function loop(now) {
+    const rawDt = Math.min(.05, (now - last) / 1000); last = now;
+    if (state.player) state.fps = lerp(state.fps || 1, 1 / Math.max(.001, rawDt), .08);
+    update(rawDt * (state.simSpeed || 1)); renderScene(); requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
 
-  $("startButton").onclick=()=>{sound("coin");resetGame(false);};
-  $("devStartButton").onclick=()=>{sound("coin");resetGame(true);};
-  $("howButton").onclick=()=>ui.how.classList.remove("hidden");document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>$(b.dataset.close).classList.add("hidden"));
-  $("rerollButton").onclick=()=>{if(state.rerolls<=0&&!state.infiniteRerolls)return;if(!state.infiniteRerolls)state.rerolls--;ui.rerolls.textContent=state.rerolls;renderUpgradeChoices();};
-  $("leaveShop").onclick=closeShop;document.querySelectorAll("[data-event]").forEach(b=>b.onclick=()=>resolveEvent(b.dataset.event));
-  $("pauseButton").onclick=pause;$("resumeButton").onclick=resume;$("quitButton").onclick=()=>endGame(false);
-  $("againButton").onclick=()=>resetGame(Boolean(state.dev));$("menuButton").onclick=()=>{state={mode:"menu"};ui.result.classList.add("hidden");ui.menu.classList.remove("hidden");window.dispatchEvent(new CustomEvent("meow-dev-ended"));};
-  addEventListener("keydown",e=>{keys.add(e.code);if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code))e.preventDefault();if((e.code==="Escape"||e.code==="KeyP")&&!e.repeat){state.mode==="playing"?pause():state.mode==="paused"&&resume();}});
-  addEventListener("keyup",e=>keys.delete(e.code));
-  ui.joystick.addEventListener("pointerdown",e=>{joy.active=true;joy.id=e.pointerId;ui.joystick.setPointerCapture(e.pointerId);moveJoy(e);});
-  ui.joystick.addEventListener("pointermove",e=>{if(joy.active&&e.pointerId===joy.id)moveJoy(e);});
-  ui.joystick.addEventListener("pointerup",endJoy);ui.joystick.addEventListener("pointercancel",endJoy);
-  function moveJoy(e){const r=ui.joystick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,len=Math.hypot(dx,dy),m=Math.min(1,len/43);joy.x=len?dx/len*m:0;joy.y=len?dy/len*m:0;const knob=ui.joystick.firstElementChild;knob.style.transform=`translate(${joy.x*34}px,${joy.y*34}px)`;}
-  function endJoy(){joy.active=false;joy.x=joy.y=0;ui.joystick.firstElementChild.style.transform="";}
+  $("startButton").onclick = () => { sound("coin"); resetGame(false); };
+  $("devStartButton").onclick = () => { sound("coin"); resetGame(true); };
+  $("howButton").onclick = () => ui.how.classList.remove("hidden");
+  document.querySelectorAll("[data-close]").forEach(button => button.onclick = () => $(button.dataset.close).classList.add("hidden"));
+  $("rerollButton").onclick = () => { if (state.rerolls <= 0 && !state.infiniteRerolls) return; if (!state.infiniteRerolls) state.rerolls--; ui.rerolls.textContent = state.rerolls; renderUpgradeChoices(); };
+  $("leaveShop").onclick = closeShop;
+  document.querySelectorAll("[data-event]").forEach(button => button.onclick = () => resolveEvent(button.dataset.event));
+  $("pauseButton").onclick = pause; $("resumeButton").onclick = resume; $("quitButton").onclick = () => endGame(false);
+  $("againButton").onclick = () => resetGame(Boolean(state.dev));
+  $("menuButton").onclick = () => { state = { mode: "menu" }; clearWorldNodes(); ui.result.classList.add("hidden"); ui.menu.classList.remove("hidden"); window.dispatchEvent(new CustomEvent("meow-dev-ended")); };
+  addEventListener("keydown", event => { keys.add(event.code); if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault(); if ((event.code === "Escape" || event.code === "KeyP") && !event.repeat) { if (state.mode === "playing") pause(); else if (state.mode === "paused") resume(); } });
+  addEventListener("keyup", event => keys.delete(event.code));
+  ui.joystick.addEventListener("pointerdown", event => { joy.active = true; joy.id = event.pointerId; ui.joystick.setPointerCapture(event.pointerId); moveJoy(event); });
+  ui.joystick.addEventListener("pointermove", event => { if (joy.active && event.pointerId === joy.id) moveJoy(event); });
+  ui.joystick.addEventListener("pointerup", endJoy); ui.joystick.addEventListener("pointercancel", endJoy);
+  function moveJoy(event) { const rect = ui.joystick.getBoundingClientRect(), centerX = rect.left + rect.width / 2, centerY = rect.top + rect.height / 2, dx = event.clientX - centerX, dy = event.clientY - centerY, length = Math.hypot(dx, dy), amount = Math.min(1, length / 43); joy.x = length ? dx / length * amount : 0; joy.y = length ? dy / length * amount : 0; ui.joystick.firstElementChild.style.transform = `translate(${joy.x * 34}px,${joy.y * 34}px)`; }
+  function endJoy() { joy.active = false; joy.x = joy.y = 0; ui.joystick.firstElementChild.style.transform = ""; }
 
-  window.__MEOW_GAME__ = { getState:()=>state, start:resetGame, end:(win=true)=>endGame(win), dev:devApi, data:{WEAPONS,PASSIVES,DEVICES,ENEMY_TYPES} };
+  window.__MEOW_GAME__ = { getState: () => state, start: resetGame, end: (win = true) => endGame(win), dev: devApi, data: { WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES, BOSS, CHARACTER } };
   if (new URLSearchParams(location.search).get("dev") === "1") resetGame(true);
 })();

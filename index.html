@@ -3,141 +3,77 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-  <meta name="theme-color" content="#fff4d8" />
-  <title>喵勇者：花园大作战</title>
+  <meta name="theme-color" content="#e9dfc9" />
+  <title>喵勇者：墨韵庭院</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%23efe6d2'/%3E%3Cpath d='M18 20 24 8l8 10 8-10 7 13c7 14-1 31-15 31S11 35 18 20Z' fill='%23d88336' stroke='%231d211d' stroke-width='5'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <main id="app">
-    <canvas id="gameCanvas" aria-label="游戏画面"></canvas>
+    <div id="gameScene" class="game-scene" aria-label="动漫水墨风战斗场景">
+      <div id="world" class="world" aria-hidden="true"></div>
+      <div id="damageFlash" class="damage-flash" aria-hidden="true"></div>
+    </div>
 
     <section id="menu" class="screen active">
-      <div class="brand-card">
-        <p class="eyebrow">猫咪轻量动作肉鸽 · 首个可玩版本</p>
-        <h1>喵勇者<br /><span>花园大作战</span></h1>
-        <p class="subtitle">只需移动，自动攻击。用毛线球、鱼骨与猫爪击退失控的花园怪潮！</p>
+      <div class="menu-ink"></div>
+      <div class="brand-card ink-panel">
+        <div class="brand-copy">
+          <p class="eyebrow">动漫水墨动作肉鸽 · P0 纵向切片</p>
+          <h1><span>喵勇者</span><small>墨韵庭院</small></h1>
+          <p class="subtitle">踏入旧庭，以鱼骨墨针、流叶回锋、爪痕剑气与铃线追魂，击散失控的墨灵怪潮。</p>
+          <div class="seal-row"><span>自动瞄准</span><span>移动走位</span><span>七级终极</span></div>
+        </div>
+        <div class="hero-showcase">
+          <img src="assets/art/hero-balanced.png" alt="均衡型橘猫侠客" />
+          <div class="brush-name"><b>小橘侠</b><small>均衡型 · 万金油</small></div>
+        </div>
         <div class="selection-grid">
-          <button class="select-card selected" data-select="hero">
-            <span class="portrait ginger">🐱</span>
-            <span><b>橘宝 · 均衡型</b><small>6 武器槽 · 2 固定装置</small></span>
-          </button>
-          <button class="select-card selected" data-select="map">
-            <span class="portrait garden">🌻</span>
-            <span><b>向日葵庭院</b><small>教学地图 · 难度 1</small></span>
-          </button>
+          <button class="select-card selected" data-select="hero"><span class="stamp">侠</span><span><b>均衡型 · 小橘侠</b><small>6 武器槽 · 2 固定装置槽</small></span></button>
+          <button class="select-card selected" data-select="map"><span class="stamp teal">庭</span><span><b>墨韵旧庭</b><small>教学地图 · 青碧点色</small></span></button>
         </div>
-        <div class="menu-actions">
-          <button id="startButton" class="primary">开始冒险</button>
-          <button id="devStartButton" class="dev-entry">开发测试</button>
-          <button id="howButton" class="secondary">玩法说明</button>
-        </div>
-        <div class="profile-strip">
-          <span>🏆 最高存活 <b id="bestTime">00:00</b></span>
-          <span>🪙 猫币 <b id="profileCoins">0</b></span>
-        </div>
-        <p class="controls-hint">电脑：WASD / 方向键　手机：拖动左下摇杆　P / Esc：暂停</p>
+        <div class="menu-actions"><button id="startButton" class="primary">挥笔入阵</button><button id="howButton" class="secondary">玩法说明</button><button id="devStartButton" class="dev-entry">开发测试</button></div>
+        <div class="profile-strip"><span>最高存活 <b id="bestTime">00:00</b></span><span>庭院铜钱 <b id="profileCoins">0</b></span></div>
+        <p class="controls-hint">电脑：WASD / 方向键移动 · 手机：拖动左下摇杆 · P / Esc 暂停</p>
       </div>
     </section>
 
     <section id="howPanel" class="modal hidden" role="dialog" aria-modal="true">
-      <div class="panel compact">
-        <button class="close" data-close="howPanel">×</button>
-        <h2>一看就会</h2>
+      <div class="panel compact ink-panel">
+        <button class="close" data-close="howPanel" aria-label="关闭">×</button><p class="eyebrow">入门卷</p><h2>只管走位，武器自动出手</h2>
         <div class="how-grid">
-          <article><span>🕹️</span><b>只管移动</b><p>武器会自动瞄准并攻击。</p></article>
-          <article><span>✨</span><b>收集经验</b><p>升级时战斗暂停，三选一构筑。</p></article>
-          <article><span>🎁</span><b>探索庭院</b><p>寻找宝箱、商人和随机事件。</p></article>
-          <article><span>👑</span><b>击败 Boss</b><p>坚持到最后，打败暴走扫地机。</p></article>
+          <article><span class="ink-glyph">走</span><b>移动避险</b><p>控制小橘侠走位，攻击会自动寻找目标。</p></article>
+          <article><span class="ink-glyph teal">墨</span><b>建立 Build</b><p>升级时三选一，武器到 Lv.7 会发生机制质变。</p></article>
+          <article><span class="ink-glyph gold">拾</span><b>收集墨露</b><p>击散敌人后拾取经验、铜钱与回复。</p></article>
+          <article><span class="ink-glyph red">危</span><b>认清预警</b><p>朱红地面笔痕是敌方危险区，优先躲避。</p></article>
         </div>
-        <button class="primary" data-close="howPanel">知道啦</button>
+        <button class="primary wide" data-close="howPanel">收卷，准备出发</button>
       </div>
     </section>
 
-    <section id="upgradePanel" class="modal hidden" role="dialog" aria-modal="true">
-      <div class="panel upgrade-panel">
-        <div class="panel-heading">
-          <div><p class="eyebrow">LEVEL UP</p><h2>选一个变强！</h2></div>
-          <button id="rerollButton" class="reroll">🎲 刷新 <b id="rerollCount">2</b></button>
-        </div>
-        <div id="upgradeChoices" class="upgrade-grid"></div>
-      </div>
-    </section>
+    <section id="upgradePanel" class="modal hidden" role="dialog" aria-modal="true"><div class="panel upgrade-panel ink-panel"><div class="panel-heading"><div><p class="eyebrow">墨意提升</p><h2>选择一道新笔势</h2></div><button id="rerollButton" class="reroll">换一卷 <b id="rerollCount">2</b></button></div><div id="upgradeChoices" class="upgrade-grid"></div></div></section>
 
-    <section id="shopPanel" class="modal hidden" role="dialog" aria-modal="true">
-      <div class="panel upgrade-panel">
-        <div class="panel-heading">
-          <div><p class="eyebrow">流浪猫商店</p><h2>喵老板的好东西</h2></div>
-          <div class="wallet">🪙 <b id="shopCoins">0</b></div>
-        </div>
-        <div id="shopChoices" class="upgrade-grid shop-grid"></div>
-        <button id="leaveShop" class="secondary wide">离开商店</button>
-      </div>
-    </section>
+    <section id="shopPanel" class="modal hidden" role="dialog" aria-modal="true"><div class="panel upgrade-panel ink-panel"><div class="panel-heading"><div><p class="eyebrow">神秘商人</p><h2>行脚狸的墨宝摊</h2></div><div class="wallet">铜钱 <b id="shopCoins">0</b></div></div><div id="shopChoices" class="upgrade-grid shop-grid"></div><button id="leaveShop" class="secondary wide">离开墨宝摊</button></div></section>
 
-    <section id="eventPanel" class="modal hidden" role="dialog" aria-modal="true">
-      <div class="panel compact event-panel">
-        <span class="event-icon">🐝</span>
-        <p class="eyebrow">随机事件</p>
-        <h2>迷路的小蜜蜂</h2>
-        <p>“嗡……能帮我找到回蜂巢的路吗？”</p>
-        <div class="event-actions">
-          <button class="primary" data-event="help">帮忙指路 <small>恢复 35% 生命，并获得移速</small></button>
-          <button class="danger" data-event="honey">偷偷拿蜂蜜 <small>伤害 +25%，但失去 25% 当前生命</small></button>
-        </div>
-      </div>
-    </section>
+    <section id="eventPanel" class="modal hidden" role="dialog" aria-modal="true"><div class="panel compact event-panel ink-panel"><span class="event-icon">莲</span><p class="eyebrow">庭院奇遇</p><h2>纸上莲花忽然绽放</h2><p>一缕淡青墨气绕到你的爪边。</p><div class="event-actions"><button class="primary" data-event="help">接纳祝福 <small>恢复 35% 生命并提高移速</small></button><button class="danger" data-event="honey">摘下墨蕊 <small>伤害 +25%，失去 25% 当前生命</small></button></div></div></section>
 
-    <section id="pausePanel" class="modal hidden" role="dialog" aria-modal="true">
-      <div class="panel pause-panel">
-        <p class="eyebrow">PAUSED</p><h2>猫爪暂停</h2>
-        <div id="buildSummary" class="build-summary"></div>
-        <button id="resumeButton" class="primary wide">继续战斗</button>
-        <button id="quitButton" class="secondary wide">放弃本局</button>
-      </div>
-    </section>
+    <section id="pausePanel" class="modal hidden" role="dialog" aria-modal="true"><div class="panel pause-panel ink-panel"><p class="eyebrow">暂歇</p><h2>收笔一刻</h2><div id="buildSummary" class="build-summary"></div><button id="resumeButton" class="primary wide">继续战斗</button><button id="quitButton" class="secondary wide">返回庭外</button></div></section>
 
-    <section id="resultPanel" class="screen hidden">
-      <div class="result-card">
-        <div id="resultBadge" class="result-badge">🏆</div>
-        <p id="resultKicker" class="eyebrow">冒险完成</p>
-        <h2 id="resultTitle">庭院恢复平静！</h2>
-        <p id="resultLine" class="result-line">“喵！今天的罐头可以安心吃啦。”</p>
-        <div id="resultStats" class="stats-grid"></div>
-        <div id="resultBuild" class="result-build"></div>
-        <div class="menu-actions">
-          <button id="againButton" class="primary">再来一局</button>
-          <button id="menuButton" class="secondary">返回首页</button>
-        </div>
-      </div>
-    </section>
+    <section id="resultPanel" class="screen hidden"><div class="result-card ink-panel"><div id="resultBadge" class="result-badge">胜</div><p id="resultKicker" class="eyebrow">墨战落幕</p><h2 id="resultTitle">旧庭重归宁静</h2><p id="resultLine" class="result-line">最后一笔落下，群墨归纸。</p><div id="resultStats" class="stats-grid"></div><div id="resultBuild" class="result-build"></div><div class="menu-actions"><button id="againButton" class="primary">再入一局</button><button id="menuButton" class="secondary">返回首页</button></div></div></section>
 
     <div id="hud" class="hud hidden">
-      <div class="hud-top">
-        <div class="health-wrap"><span>橘宝</span><div class="bar health"><i id="healthBar"></i></div><b id="healthText">100 / 100</b></div>
-        <div class="timer"><small id="phaseLabel">快速成型</small><b id="timerText">08:00</b></div>
-        <button id="pauseButton" aria-label="暂停">Ⅱ</button>
-      </div>
-      <div id="bossHud" class="boss-hud hidden"><span id="bossName">暴走扫地机</span><div class="bar boss"><i id="bossBar"></i></div></div>
-      <div class="hud-bottom">
-        <div class="level-badge">LV <b id="levelText">1</b></div>
-        <div class="bar xp"><i id="xpBar"></i></div>
-        <div class="coin-hud">🪙 <b id="coinText">0</b></div>
-      </div>
-      <div id="objectiveToast" class="objective-toast hidden"></div>
-      <div id="weaponDock" class="weapon-dock"></div>
+      <div class="hud-top"><div class="hero-status paper-strip"><span class="mini-portrait"><img src="assets/art/hero-balanced.png" alt="" /></span><div class="health-wrap"><span>小橘侠</span><div class="bar health"><i id="healthBar"></i></div><b id="healthText">120 / 120</b></div></div><div class="timer paper-strip"><small id="phaseLabel">快速成型</small><b id="timerText">08:00</b></div><button id="pauseButton" aria-label="暂停">Ⅱ</button></div>
+      <div id="bossHud" class="boss-hud hidden"><span id="bossName">泼墨狸将 · 第一阶段</span><div class="bar boss"><i id="bossBar"></i></div></div>
+      <div class="hud-bottom paper-strip"><div class="level-badge">境 <b id="levelText">1</b></div><div class="bar xp"><i id="xpBar"></i></div><div class="coin-hud">钱 <b id="coinText">0</b></div></div>
+      <div id="objectiveToast" class="objective-toast hidden"></div><div id="weaponDock" class="weapon-dock"></div>
     </div>
 
     <div id="joystick" class="joystick hidden"><div></div></div>
-    <button id="devToggle" class="dev-toggle hidden" aria-controls="devLab" aria-expanded="false">DEV ⚙</button>
-    <aside id="devLab" class="dev-lab hidden" aria-label="开发者测试台">
-      <header class="dev-header">
-        <div><small>DEVELOPER TOOLS</small><strong>DEV LAB</strong></div>
-        <button id="devClose" aria-label="关闭开发者测试台">×</button>
-      </header>
-      <div id="devLabContent" class="dev-content"></div>
-    </aside>
-    <div id="rotateNotice">旋转设备可获得更宽视野</div>
+    <button id="devToggle" class="dev-toggle hidden" aria-controls="devLab" aria-expanded="false">DEV</button>
+    <aside id="devLab" class="dev-lab hidden" aria-label="开发者测试台"><header class="dev-header"><div><small>DEVELOPER TOOLS</small><strong>INK COMBAT LAB</strong></div><button id="devClose" aria-label="关闭开发者测试台">×</button></header><div id="devLabContent" class="dev-content"></div></aside>
+    <div id="rotateNotice">横屏可获得更宽的庭院视野</div>
   </main>
+  <script src="game-data.js"></script>
   <script src="game.js"></script>
   <script src="devtools.js"></script>
 </body>
