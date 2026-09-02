@@ -4,7 +4,7 @@
   const artRoot = "assets/art/";
   const artAsset = (inkFile, legacyFile) => ({ art: `${artRoot}${inkFile}`, fallback_art: `${artRoot}${legacyFile}`, legacy_art: `${artRoot}${legacyFile}` });
   const LEGACY_ASSET_MAP = {
-    hero_balanced: "character_moxiaobai_ink", hero_nine_lives: "character_chihen_ink", hero_summoner: "character_qingyan_ink",
+    hero_balanced: "character_miaoxiaobai_ink", character_moxiaobai_ink: "character_miaoxiaobai_ink", hero_nine_lives: "character_chihen_ink", hero_summoner: "character_qingyan_ink",
     weapon_old_fishbone: "weapon_fishbone_ink", weapon_old_yarn: "weapon_leaf_ink", weapon_old_claw: "weapon_claw_ink", weapon_old_laser: "weapon_bell_line_ink",
     weapon_old_can: "weapon_ink_bomb", weapon_old_orbit: "weapon_fan_blade", weapon_old_dot: "weapon_ink_mist", weapon_old_knockback: "weapon_water_wave",
     weapon_old_area: "weapon_ink_sigil", weapon_old_chain: "weapon_thunder_ink", weapon_old_return: "weapon_return_fish", weapon_old_shockwave: "weapon_ink_roar",
@@ -92,36 +92,104 @@
     trap: { id: "DEV_003", name: "纸伞震阵", icon: "伞", max: 5, desc: "脚下留下一柄纸伞，敌人靠近时推出水纹震波。", tags: "固定装置 · 控制", art_key: "device_umbrella", fx_id: "FX_004" }
   };
 
-  const ENEMY_TYPES = {
-    mouse: { id: "ENM_GRUNT", name: "小墨灵", emoji: "墨", hp: 24, speed: 85, damage: 8, r: 15, xp: 1, art_key: "enemy_ink_spirit_ink", ...artAsset("enemy-ink-spirit-ink.png", "enemy-ink-spirit.svg"), ai_role: "melee", death_fx: "FX_006" },
-    bug: { id: "ENM_FAST", name: "疾影鼠", emoji: "影", hp: 16, speed: 125, damage: 7, r: 12, xp: 1, art_key: "enemy_shadow_mouse_ink", ...artAsset("enemy-shadow-mouse-ink.png", "enemy-shadow-mouse.svg"), ai_role: "fast", death_fx: "FX_006" },
-    hedgehog: { id: "ENM_TANK", name: "石墨兽", emoji: "石", hp: 70, speed: 60, damage: 12, r: 21, xp: 3, art_key: "enemy_stone_beast_ink", ...artAsset("enemy-stone-beast-ink.png", "enemy-stone-beast.svg"), ai_role: "tank", death_fx: "FX_006" },
-    bee: { id: "ENM_RANGED", name: "墨羽鸦", emoji: "羽", hp: 32, speed: 70, damage: 9, r: 14, xp: 2, art_key: "enemy_ink_crow_ink", ...artAsset("enemy-ink-crow-ink.png", "enemy-ink-spirit.svg"), art_variant: "crow", ai_role: "ranged", ranged: true, death_fx: "FX_006" },
-    frog: { id: "ENM_SUPPORT", name: "铃纸灵", emoji: "铃", hp: 45, speed: 65, damage: 5, r: 17, xp: 3, art_key: "enemy_bell_spirit_ink", ...artAsset("enemy-bell-spirit-ink.png", "enemy-ink-spirit.svg"), art_variant: "support", ai_role: "support", ranged: true, death_fx: "FX_006" },
-    snail: { id: "ENM_SPECIAL", name: "残墨妖", emoji: "残", hp: 90, speed: 80, damage: 15, r: 22, xp: 5, art_key: "enemy_residual_ink", ...artAsset("enemy-residual-ink.png", "enemy-stone-beast.svg"), art_variant: "residual", ai_role: "special", death_fx: "FX_007" }
+  const SUMMONS = {
+    mouse: { id: "SUM_001", name: "墨鼠机关", icon: "鼠", role: ["output"], max: 5, maxHp: 82, damage: 15, range: 520, cooldown: 1.05, speed: 210, r: 18, color: "#27313a", art: `${artRoot}summon-ink-mouse.svg`, fallback_art: `${artRoot}enemy-shadow-mouse.svg`, projectile: "ink-seed" },
+    crane: { id: "SUM_002", name: "纸鹤群", icon: "鹤", role: ["support", "control"], max: 5, maxHp: 68, damage: 12, range: 570, cooldown: 1.28, speed: 230, r: 18, color: "#536b87", art: `${artRoot}summon-paper-crane.svg`, fallback_art: `${artRoot}enemy-ink-spirit.svg`, projectile: "paper-feather" },
+    dog: { id: "SUM_003", name: "石甲犬灵", icon: "犬", role: ["tank"], max: 5, maxHp: 150, damage: 24, range: 285, cooldown: .9, speed: 195, r: 24, color: "#3a4652", art: `${artRoot}summon-stone-dog.svg`, fallback_art: `${artRoot}enemy-stone-beast.svg`, projectile: "stone-claw" }
   };
 
-  const BOSS = { id: "BOSS_1", name: "泼墨狸将", art_key: "boss_ink_tanuki_ink", ...artAsset("boss-ink-tanuki-ink.png", "boss-ink-tanuki.svg"), phases: 2, hp: 3500, damage: 20, speed: 50, skill_set: ["fan_ink_bullets", "brush_mark_aoe"], phase_art: ["calm_brush", "vermilion_brush"], skill_fx: ["FX_002", "FX_005"] };
-  const characterAsset = (portraitFile, fallbackFile = "hero-balanced.png") => ({
+  const growthNode = (character_id, node_id, name, tier, node_type, prerequisites, coin_cost, description, effect_ops = [], extra = {}) => ({
+    character_id, node_id, name, tier, node_type, prerequisites, coin_cost, description, effect_ops, ...extra
+  });
+  const SKILL_TREE_NODES = [
+    growthNode("CHAR_BALANCED","B01","强健体魄",1,"BASE",[],120,"最大生命 +10%。",[{op:"add_stat",stat:"maxHp",mode:"mult",value:.10}]),
+    growthNode("CHAR_BALANCED","B02","轻灵步",1,"BASE",[],120,"移动速度 +6%。",[{op:"add_stat",stat:"speed",mode:"mult",value:.06}]),
+    growthNode("CHAR_BALANCED","B03","快手",1,"BASE",[],120,"攻击速度 +8%。",[{op:"add_stat",stat:"attackSpeed",mode:"mult",value:.08}]),
+    growthNode("CHAR_BALANCED","B04","灵步蓄锋",2,"MECHANIC",["B02"],220,"移动累计 250 单位后，下一次有效武器攻击伤害 +25%。",[{op:"add_trigger_effect",trigger:"distance_charge",distance:250,multiplier:1.25}],{unlock_pool_ids:["CARD_BAL_STEP_EDGE"]}),
+    growthNode("CHAR_BALANCED","B05","换势",2,"MECHANIC",["B03"],220,"选择武器升级后 3 秒内攻速 +18%。",[{op:"add_trigger_effect",trigger:"weapon_upgrade",attackSpeed:.18,duration:3}],{unlock_pool_ids:["CARD_BAL_SWITCH_STANCE"]}),
+    growthNode("CHAR_BALANCED","B06","百兵熟练",2,"MECHANIC",["B01"],260,"首次获得新武器时，随机获得伤害、冷却或范围小熟练。",[{op:"add_trigger_effect",trigger:"new_weapon_mastery"}],{unlock_pool_ids:["CARD_BAL_FAMILIARITY"]}),
+    growthNode("CHAR_BALANCED","B07","墨势显锋",3,"VFX",["B04","B05"],320,"所有武器达到 Lv.3 后，最低进入 VFX Tier 2。",[{op:"set_min_vfx_tier",target:"weapon",level:3,tier:2}],{vfx_tier_mod:{weapon_min:2}}),
+    growthNode("CHAR_BALANCED","B08","兵器共鸣",3,"MECHANIC",["B06"],360,"持有 2/3/4 类武器标签时，依次获得伤害、攻速、暴击奖励。",[{op:"add_trigger_effect",trigger:"weapon_tag_resonance"}],{unlock_pool_ids:["CARD_BAL_TAG_RESONANCE"]}),
+    growthNode("CHAR_BALANCED","B09","武器大师",3,"POOL",["B07"],380,"解锁局内稀有升级「熟能生巧」。",[{op:"unlock_pool_entry",id:"CARD_BAL_MASTERY"}],{unlock_pool_ids:["CARD_BAL_MASTERY"]}),
+    growthNode("CHAR_BALANCED","B10","万法皆通",4,"CORE",["B08","B09"],520,"选择普通/稀有武器升级时，20% 概率追加一次次级强化。",[{op:"add_trigger_effect",trigger:"extra_minor_roll",chance:.20}],{unlock_pool_ids:["CARD_BAL_ALLWAYS"]}),
+    growthNode("CHAR_BALANCED","B11","固定装置扩容",4,"SLOT",["B06"],480,"固定装置槽由 2 扩为 3。",[{op:"add_slot",target:"device",value:1}]),
+    growthNode("CHAR_BALANCED","B12","装置墨脉",4,"MECHANIC",["B11"],420,"固定装置耐久 +25%，装置攻击表现最低 VFX Tier +1。",[{op:"add_stat",stat:"deviceHp",mode:"mult",value:.25},{op:"set_min_vfx_tier",target:"device",tier:2}],{unlock_pool_ids:["CARD_BAL_DEVICE_INK"]}),
+    growthNode("CHAR_BALANCED","B13","挑战印记",5,"CHALLENGE",["B10","B12"],650,"解锁喵小白专属单武器挑战入口，不增加战斗属性。",[{op:"unlock_challenge",id:"balanced_single_weapon"}],{challenge_id:"balanced_single_weapon"}),
+    growthNode("CHAR_BALANCED","B14","最终突破",6,"BREAKTHROUGH",["B13"],1000,"完成挑战后，在「百兵通」与「一器通神」中选择其一。",[],{breakthrough_options:[{id:"BREAK_BAL_A",name:"百兵通",description:"每种不同主标签提供 +3% 最终伤害，上限 12%。"},{id:"BREAK_BAL_B",name:"一器通神",description:"主武器类型不超过 2 时，最终伤害 +18%、冷却 -8%。"}]}),
+
+    growthNode("CHAR_NINELIVES","N01","血战体质",1,"BASE",[],120,"最大生命 +12%。",[{op:"add_stat",stat:"maxHp",mode:"mult",value:.12}]),
+    growthNode("CHAR_NINELIVES","N02","战斗本能",1,"BASE",[],120,"最终伤害 +8%。",[{op:"add_stat",stat:"damageMul",mode:"mult",value:.08}]),
+    growthNode("CHAR_NINELIVES","N03","赤目",1,"BASE",[],120,"暴击率 +4%。",[{op:"add_stat",stat:"crit",mode:"add",value:.04}]),
+    growthNode("CHAR_NINELIVES","N04","余火",2,"MECHANIC",["N01"],240,"每次九命复活后 6 秒内攻速 +30%。",[{op:"add_trigger_effect",trigger:"revive_afterfire",attackSpeed:.30,duration:6}],{unlock_pool_ids:["CARD_NINE_AFTERFIRE"]}),
+    growthNode("CHAR_NINELIVES","N05","血墨护身",2,"MECHANIC",["N02"],260,"九命护盾破裂时释放半径 180 的朱红墨爆并强击退。",[{op:"add_trigger_effect",trigger:"shield_break_burst",radius:180,damage:1.2}],{unlock_pool_ids:["CARD_NINE_SHIELD_BURST"],vfx_tier_mod:{shield_break:1}}),
+    growthNode("CHAR_NINELIVES","N06","追命",2,"MECHANIC",["N03"],260,"护盾破裂后的下一次有效武器攻击必定暴击，5 秒失效。",[{op:"add_trigger_effect",trigger:"shield_break_next_crit",duration:5}],{unlock_pool_ids:["CARD_NINE_PURSUIT"]}),
+    growthNode("CHAR_NINELIVES","N07","第二命",3,"CORE",["N04"],360,"九命自动复活次数 +1。",[{op:"modify_revive",lives:1}]),
+    growthNode("CHAR_NINELIVES","N08","残命韧性",3,"MECHANIC",["N05"],340,"九命复活后的最大生命保留比例提高为 60%。",[{op:"modify_revive",retention:.60}]),
+    growthNode("CHAR_NINELIVES","N09","血墨显形",3,"VFX",["N06"],300,"每次九命复活令角色与武器攻击 VFX Tier +1，最高 Tier 3。",[{op:"add_trigger_effect",trigger:"revive_vfx_tier"}],{vfx_tier_mod:{by_revive:1}}),
+    growthNode("CHAR_NINELIVES","N10","死斗印记",4,"CORE",["N07","N08"],520,"每次九命复活随机获得伤害、攻速或暴击印记，单种最多 2 层。",[{op:"add_trigger_effect",trigger:"revive_random_mark"}],{unlock_pool_ids:["CARD_NINE_DEATHMARK"]}),
+    growthNode("CHAR_NINELIVES","N11","不屈残火",4,"MECHANIC",["N09"],480,"复活后 3 秒内首次致死伤害保留 1 HP。",[{op:"add_trigger_effect",trigger:"post_revive_death_guard",duration:3}],{unlock_pool_ids:["CARD_NINE_UNYIELDING"]}),
+    growthNode("CHAR_NINELIVES","N12","第三命",4,"CORE",["N10"],560,"九命自动复活次数再 +1。",[{op:"modify_revive",lives:1}]),
+    growthNode("CHAR_NINELIVES","N13","挑战印记",5,"CHALLENGE",["N11","N12"],680,"解锁赤痕专属最终命通关挑战。",[{op:"unlock_challenge",id:"ninelives_last_life"}],{challenge_id:"ninelives_last_life"}),
+    growthNode("CHAR_NINELIVES","N14","最终突破",6,"BREAKTHROUGH",["N13"],1050,"完成挑战后，在「不灭」与「修罗」中选择其一。",[],{breakthrough_options:[{id:"BREAK_NINE_A",name:"不灭",description:"九命 +1，生命保留提高到 65%。"},{id:"BREAK_NINE_B",name:"修罗",description:"每次复活额外提高伤害、攻速与暴击；最后一命固定 Tier 3。"}]}),
+
+    growthNode("CHAR_SUMMONER","S01","护身墨衣",1,"BASE",[],120,"最大生命 +12%。",[{op:"add_stat",stat:"maxHp",mode:"mult",value:.12}]),
+    growthNode("CHAR_SUMMONER","S02","灵步",1,"BASE",[],120,"移动速度 +6%。",[{op:"add_stat",stat:"speed",mode:"mult",value:.06}]),
+    growthNode("CHAR_SUMMONER","S03","灵契",1,"BASE",[],140,"所有召唤物最终伤害 +10%。",[{op:"add_stat",stat:"summonDamage",mode:"mult",value:.10}]),
+    growthNode("CHAR_SUMMONER","S04","落笔生灵",2,"CORE",["S01"],260,"进入关卡时自动获得 Lv.1 墨鼠机关。",[{op:"start_with_summon",id:"mouse",level:1}],{unlock_pool_ids:["CARD_SUM_STARTER"],vfx_tier_mod:{starter:1}}),
+    growthNode("CHAR_SUMMONER","S05","墨骨",2,"BASE",["S03"],240,"所有召唤物最大生命 +18%。",[{op:"add_stat",stat:"summonHp",mode:"mult",value:.18}]),
+    growthNode("CHAR_SUMMONER","S06","灵契显形",2,"VFX",["S04"],220,"所有召唤物最低 VFX Tier 提升至 1。",[{op:"set_min_vfx_tier",target:"summon",tier:1}],{vfx_tier_mod:{summon_min:1}}),
+    growthNode("CHAR_SUMMONER","S07","聚灵",3,"MECHANIC",["S04","S05"],340,"召唤击杀获得的伙伴能量 +25%。",[{op:"add_stat",stat:"partnerEnergy",mode:"mult",value:.25}],{unlock_pool_ids:["CARD_SUM_GATHER"]}),
+    growthNode("CHAR_SUMMONER","S08","同心",3,"MECHANIC",["S06"],360,"存活召唤达到 3/5 时，分别获得伤害/攻速加成。",[{op:"add_trigger_effect",trigger:"alive_summon_thresholds"}],{unlock_pool_ids:["CARD_SUM_UNITY"]}),
+    growthNode("CHAR_SUMMONER","S09","余魂",3,"MECHANIC",["S07"],380,"召唤物阵亡后留下 3 秒墨影，以 50% 伤害继续攻击。",[{op:"add_trigger_effect",trigger:"summon_death_echo",duration:3,damage:.5}],{unlock_pool_ids:["CARD_SUM_ECHO_SOUL"],vfx_tier_mod:{echo:1}}),
+    growthNode("CHAR_SUMMONER","S10","共鸣墨线",3,"VFX",["S08"],300,"召唤 Lv.3 后最低进入 Tier 2，能量触发时显现淡金墨线。",[{op:"set_min_vfx_tier",target:"summon",level:3,tier:2},{op:"add_trigger_effect",trigger:"resonance_line"}],{vfx_tier_mod:{summon_lv3:2}}),
+    growthNode("CHAR_SUMMONER","S11","快速回魂",4,"MECHANIC",["S09"],420,"召唤复活时间 -20%，复活后 5 秒攻速 +25%。",[{op:"modify_summon_respawn",multiplier:.8,attackSpeed:.25,duration:5}],{unlock_pool_ids:["CARD_SUM_RETURN"]}),
+    growthNode("CHAR_SUMMONER","S12","百灵袋",4,"SLOT",["S08"],480,"召唤槽由 4 扩为 5。",[{op:"add_slot",target:"summon",value:1}]),
+    growthNode("CHAR_SUMMONER","S13","画中兵器",4,"SLOT",["S10"],480,"武器槽由 3 扩为 4。",[{op:"add_slot",target:"weapon",value:1}]),
+    growthNode("CHAR_SUMMONER","S14","墨阵共鸣",4,"CORE",["S11","S12"],560,"输出、坦克、辅助、控制齐全时，召唤伤害 +15%、攻速 +10%、复活时间 -10%。",[{op:"add_trigger_effect",trigger:"summon_role_set_bonus"}],{unlock_pool_ids:["CARD_SUM_FORMATION"],vfx_tier_mod:{formation:1}}),
+    growthNode("CHAR_SUMMONER","S15","挑战印记",5,"CHALLENGE",["S13","S14"],700,"解锁青砚专属无召唤挑战；完成后解锁第 6 召唤槽。",[{op:"unlock_challenge",id:"summoner_no_summon"}],{challenge_id:"summoner_no_summon"}),
+    growthNode("CHAR_SUMMONER","S16","最终突破",6,"BREAKTHROUGH",["S15"],1100,"完成挑战后，在「百灵图」与「真灵契」中选择其一。",[],{breakthrough_options:[{id:"BREAK_SUM_A",name:"百灵图",description:"召唤越多，伙伴能量获取越快；6 只时 +30%。"},{id:"BREAK_SUM_B",name:"真灵契",description:"封印一个槽位，换取其余召唤伤害 +22%、生命 +20% 与 Lv.5 终极表现。"}]})
+  ];
+  const SKILL_TREE = Object.freeze(Object.fromEntries(Object.values({ CHAR_BALANCED: "CHAR_BALANCED", CHAR_NINELIVES: "CHAR_NINELIVES", CHAR_SUMMONER: "CHAR_SUMMONER" }).map(id => [id, SKILL_TREE_NODES.filter(node => node.character_id === id)])));
+  const GROWTH_CARDS = {
+    CARD_BAL_MASTERY: { id:"CARD_BAL_MASTERY", node_id:"B09", character_id:"CHAR_BALANCED", name:"熟能生巧", icon:"熟", rarity:"rare", unique:false, condition:"weapon_lv4", description:"随机一把 Lv.4 以上武器最终伤害 +8%。" },
+    CARD_NINE_SHIELD_BURST: { id:"CARD_NINE_SHIELD_BURST", node_id:"N05", character_id:"CHAR_NINELIVES", name:"血墨护身", icon:"环", rarity:"rare", unique:false, condition:"always", description:"盾破墨爆范围 +25%、伤害 +40%。" },
+    CARD_NINE_DEATHMARK: { id:"CARD_NINE_DEATHMARK", node_id:"N10", character_id:"CHAR_NINELIVES", name:"死斗印记", icon:"印", rarity:"epic", unique:true, condition:"revived", description:"本局死亡印记的后续增益提高 25%。" },
+    CARD_NINE_UNYIELDING: { id:"CARD_NINE_UNYIELDING", node_id:"N11", character_id:"CHAR_NINELIVES", name:"不屈残火", icon:"焰", rarity:"epic", unique:true, condition:"always", description:"复活后的死亡保护窗口延长 1 秒。" },
+    CARD_SUM_GATHER: { id:"CARD_SUM_GATHER", node_id:"S07", character_id:"CHAR_SUMMONER", name:"聚灵", icon:"聚", rarity:"rare", unique:false, condition:"has_summon", description:"伙伴能量获取再提高 15%。" },
+    CARD_SUM_ECHO_SOUL: { id:"CARD_SUM_ECHO_SOUL", node_id:"S09", character_id:"CHAR_SUMMONER", name:"余魂", icon:"魂", rarity:"epic", unique:true, condition:"has_summon", description:"余魂伤害提高到 75%，持续时间提高到 4 秒。" },
+    CARD_SUM_FORMATION: { id:"CARD_SUM_FORMATION", node_id:"S14", character_id:"CHAR_SUMMONER", name:"墨阵共鸣", icon:"阵", rarity:"epic", unique:true, condition:"formation", description:"四职业共鸣阵额外提供召唤暴击率 +8%。" }
+  };
+
+  const ENEMY_TYPES = {
+    mouse: { id: "ENM_GRUNT", name: "小墨灵", emoji: "墨", hp: 24, speed: 85, damage: 8, r: 15, xp: 1, art_key: "enemy_ink_spirit_ink", ...artAsset("enemy-ink-spirit.svg", "enemy-ink-spirit.svg"), ai_role: "melee", death_fx: "FX_006" },
+    bug: { id: "ENM_FAST", name: "疾影鼠", emoji: "影", hp: 16, speed: 125, damage: 7, r: 12, xp: 1, art_key: "enemy_shadow_mouse_ink", ...artAsset("enemy-shadow-mouse.svg", "enemy-shadow-mouse.svg"), ai_role: "fast", death_fx: "FX_006" },
+    hedgehog: { id: "ENM_TANK", name: "石墨兽", emoji: "石", hp: 70, speed: 60, damage: 12, r: 21, xp: 3, art_key: "enemy_stone_beast_ink", ...artAsset("enemy-stone-beast.svg", "enemy-stone-beast.svg"), ai_role: "tank", death_fx: "FX_006" },
+    bee: { id: "ENM_RANGED", name: "墨羽鸦", emoji: "羽", hp: 32, speed: 70, damage: 9, r: 14, xp: 2, art_key: "enemy_ink_crow_ink", ...artAsset("enemy-shadow-mouse.svg", "enemy-ink-spirit.svg"), art_variant: "crow", ai_role: "ranged", ranged: true, death_fx: "FX_006" },
+    frog: { id: "ENM_SUPPORT", name: "铃纸灵", emoji: "铃", hp: 45, speed: 65, damage: 5, r: 17, xp: 3, art_key: "enemy_bell_spirit_ink", ...artAsset("enemy-ink-spirit.svg", "enemy-ink-spirit.svg"), art_variant: "support", ai_role: "support", ranged: true, death_fx: "FX_006" },
+    snail: { id: "ENM_SPECIAL", name: "残墨妖", emoji: "残", hp: 90, speed: 80, damage: 15, r: 22, xp: 5, art_key: "enemy_residual_ink", ...artAsset("enemy-stone-beast.svg", "enemy-stone-beast.svg"), art_variant: "residual", ai_role: "special", death_fx: "FX_007" }
+  };
+
+  const BOSS = { id: "BOSS_1", name: "泼墨狸将", art_key: "boss_ink_tanuki_ink", ...artAsset("boss-ink-tanuki.svg", "boss-ink-tanuki.svg"), phases: 2, hp: 3500, damage: 20, speed: 50, skill_set: ["fan_ink_bullets", "brush_mark_aoe"], phase_art: ["calm_brush", "vermilion_brush"], skill_fx: ["FX_002", "FX_005"] };
+  const characterAsset = (portraitFile, fallbackFile = "hero-balanced.png", combatFile = "hero-balanced.svg") => ({
     art: `${artRoot}${portraitFile}`, portrait_art: `${artRoot}${portraitFile}`, portrait_fallback_art: `${artRoot}${fallbackFile}`,
     fallback_art: `${artRoot}${fallbackFile}`, legacy_art: `${artRoot}${fallbackFile}`,
-    combat_art: `${artRoot}hero-balanced.svg`, combat_fallback_art: `${artRoot}${fallbackFile}`
+    combat_art: `${artRoot}${combatFile}`, combat_fallback_art: `${artRoot}${fallbackFile}`
   });
   const CHARACTERS = {
     moxiaobai: {
-      id: "CHAR_BALANCED", key: "moxiaobai", name: "墨小白", role: "均衡型 / 万金油", status: "ready", status_text: "可出战", palette: "teal", art_key: "character_moxiaobai_ink",
-      ...characterAsset("character-moxiaobai-ink.png"), style_theme: "anime_sumi_e", summary: "基础扎实、武器自由，依靠本局 Build 应对各种战局。",
+      id: "CHAR_BALANCED", key: "moxiaobai", name: "喵小白", role: "均衡型 / 万金油", status: "ready", status_text: "可出战", palette: "teal", art_key: "character_miaoxiaobai_ink",
+      ...characterAsset("character-miaoxiaobai-ink.png", "hero-balanced.png", "character-miaoxiaobai-combat.svg"), style_theme: "anime_sumi_e", summary: "青碧围巾随步势飞扬，基础扎实、武器自由，依靠本局 Build 应对各种战局。",
       traits: ["6 武器槽", "2 个固定装置槽", "不能使用自主移动召唤物", "基础属性强化效果略高"],
       base_stats: { maxHp: 120, speed: 195, damageMul: 1, attackSpeed: 1.05, crit: .05, size: 1, armor: 0, pickup: 82 },
       slot_rules: { weapon: 6, device: 2, deviceMax: 3, summon: 0 }, mechanics: { type: "standard_build", allowAutonomousSummons: false }
     },
     chihen: {
-      id: "CHAR_NINE_LIVES", key: "chihen", name: "赤痕", role: "九命型 / 高风险高输出", status: "ready", status_text: "可出战", palette: "vermilion", art_key: "character_chihen_ink",
+      id: "CHAR_NINELIVES", key: "chihen", name: "赤痕", role: "九命型 / 高风险高输出", status: "ready", status_text: "可出战", palette: "vermilion", art_key: "character_chihen_ink",
       ...characterAsset("character-chihen-ink.png"), style_theme: "anime_sumi_e", summary: "九命轮回，以生命上限换取永久攻击、攻速与暴击成长。",
       traits: ["赤痕裂爪 · 近身爆发", "断命突进 · 自动追斩", "九命自动复活", "复活获挡伤并永久变强"],
       base_stats: { maxHp: 120, speed: 190, damageMul: 1.12, attackSpeed: 1.08, crit: .07, size: 1, armor: 0, pickup: 78 },
       slot_rules: { weapon: 6, device: 0, summon: 0 },
-      mechanics: { type: "nine_lives", lives: 9, reviveMaxHpMultiplier: .5, reviveShieldCharges: 1, reviveDamageMultiplier: 1.12, reviveAttackSpeedMultiplier: 1.08, reviveCritBonus: .03, challengeExtraRevive: false },
+      mechanics: { type: "nine_lives", lives: 1, reviveMaxHpMultiplier: .5, reviveShieldCharges: 1, reviveDamageMultiplier: 1.12, reviveAttackSpeedMultiplier: 1.08, reviveCritBonus: .03, challengeExtraRevive: false },
       skills: {
         bloodClaw: { name: "赤痕裂爪", cooldown: 4.6, damage: 48, radius: 155 },
         fateDash: { name: "断命突进", cooldown: 7.5, damage: 66, range: 230 },
@@ -144,5 +212,5 @@
   };
   const CHARACTER = CHARACTERS.moxiaobai;
 
-  window.MEOW_DATA = { WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, LEGACY_ASSET_MAP, INK_FX };
+  window.MEOW_DATA = { WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, SKILL_TREE_NODES, GROWTH_CARDS, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, LEGACY_ASSET_MAP, INK_FX };
 })();

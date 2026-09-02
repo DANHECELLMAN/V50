@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#e9dfc9" />
   <title>喵勇者：墨韵庭院</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%23efe6d2'/%3E%3Cpath d='M18 20 24 8l8 10 8-10 7 13c7 14-1 31-15 31S11 35 18 20Z' fill='%23d88336' stroke='%231d211d' stroke-width='5'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="styles.css?v=2.0" />
+  <link rel="stylesheet" href="styles.css?v=2.2" />
 </head>
 <body>
   <main id="app">
@@ -41,14 +41,14 @@
           <button id="devStartButton" class="home-dev-link"><span>试</span>开发测试 · DEV LAB</button>
         </div>
 
-        <div id="homeHero" class="home-hero" data-character="moxiaobai" aria-label="当前角色墨小白">
+        <div id="homeHero" class="home-hero" data-character="moxiaobai" aria-label="当前角色喵小白">
           <div class="hero-ink-ring"></div>
-          <img id="homeHeroImage" src="assets/art/hero-balanced.png" alt="Q版动漫水墨猫侠墨小白" />
-          <div class="hero-caption"><b id="heroCaptionName">墨小白</b><small id="heroCaptionRole">均衡型 · 万金油</small></div>
+          <img id="homeHeroImage" src="assets/art/character-miaoxiaobai-ink.png" alt="Q版动漫水墨猫侠喵小白" />
+          <div class="hero-caption"><b id="heroCaptionName">喵小白</b><small id="heroCaptionRole">均衡型 · 万金油</small></div>
         </div>
 
         <aside class="character-scroll ink-panel">
-          <div class="scroll-heading"><span id="homeCharacterMark">均</span><b id="homeCharacterName">墨小白</b><em id="homeCharacterStatus">可出战</em></div>
+          <div class="scroll-heading"><span id="homeCharacterMark">均</span><b id="homeCharacterName">喵小白</b><em id="homeCharacterStatus">可出战</em></div>
           <div class="scroll-level"><b>Lv.1</b><span id="homeCharacterRole">均衡型 / 万金油</span></div>
           <div class="scroll-progress"><i></i></div>
           <p id="homeCharacterSummary">基础扎实、武器自由，依靠本局 Build 应对各种战局。</p>
@@ -67,7 +67,7 @@
       <div class="panel compact ink-panel">
         <button class="close" data-close="howPanel" aria-label="关闭">×</button><p class="eyebrow">挑战 · 第一章</p><h2>竹庭试炼</h2>
         <div class="how-grid">
-          <article><span class="ink-glyph">走</span><b>移动避险</b><p>控制墨小白走位，攻击会自动寻找目标。</p></article>
+          <article><span class="ink-glyph">走</span><b>移动避险</b><p>控制喵小白走位，攻击会自动寻找目标。</p></article>
           <article><span class="ink-glyph teal">墨</span><b>建立 Build</b><p>升级时三选一，武器到 Lv.7 会发生机制质变。</p></article>
           <article><span class="ink-glyph gold">拾</span><b>收集墨露</b><p>击散敌人后拾取经验、铜钱与回复。</p></article>
           <article><span class="ink-glyph red">危</span><b>认清预警</b><p>朱红地面笔痕是敌方危险区，优先躲避。</p></article>
@@ -77,6 +77,18 @@
     </section>
 
     <section id="characterPanel" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="characterPanelTitle"><div class="panel character-panel ink-panel"><button class="close" data-close="characterPanel" aria-label="关闭">×</button><p class="eyebrow">角色</p><h2 id="characterPanelTitle">三位猫侠 · 三种战斗方式</h2><p class="panel-note">三位角色均可出战。赤痕与青砚使用正式立绘；局内形象暂为独立水墨占位，等待后续建模方案。</p><div id="characterChoices" class="character-choice-grid"></div></div></section>
+
+    <section id="growthPanel" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="growthPanelTitle">
+      <div class="panel growth-panel ink-panel">
+        <button class="close" data-close="growthPanel" aria-label="关闭">×</button>
+        <div class="growth-heading"><div><p class="eyebrow">角色成长 · V2</p><h2 id="growthPanelTitle">三侠墨脉技能树</h2><p>局外成长以机制、专属卡与视觉进化为主；未投入技能树也可正常挑战。</p></div><div class="growth-wallet"><small>可用铜钱</small><b id="growthCoins">0</b></div></div>
+        <div id="growthCharacterTabs" class="growth-tabs" role="tablist"></div>
+        <div class="growth-legend"><span><i class="base"></i>基础</span><span><i class="mechanic"></i>机制</span><span><i class="vfx"></i>视觉</span><span><i class="slot"></i>槽位</span><span><i class="challenge"></i>挑战/突破</span></div>
+        <div id="growthSummary" class="growth-summary"></div>
+        <div id="skillTree" class="skill-tree" aria-live="polite"></div>
+        <footer class="growth-footer"><p id="growthStatus">选择可解锁的节点，效果会在下一局自动生效。</p><button id="growthReset" class="secondary">重置当前角色</button></footer>
+      </div>
+    </section>
 
     <section id="infoPanel" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="infoTitle"><div class="panel info-panel ink-panel"><button class="close" data-close="infoPanel" aria-label="关闭">×</button><p id="infoKicker" class="eyebrow">庭院卷册</p><h2 id="infoTitle">功能信息</h2><div id="infoBody" class="info-body"></div><button class="secondary wide" data-close="infoPanel">收起卷册</button></div></section>
 
@@ -91,7 +103,7 @@
     <section id="resultPanel" class="screen hidden"><div class="result-card ink-panel"><div id="resultBadge" class="result-badge">胜</div><p id="resultKicker" class="eyebrow">墨战落幕</p><h2 id="resultTitle">旧庭重归宁静</h2><p id="resultLine" class="result-line">最后一笔落下，群墨归纸。</p><div id="resultStats" class="stats-grid"></div><div id="resultBuild" class="result-build"></div><div class="menu-actions"><button id="againButton" class="primary">再入一局</button><button id="menuButton" class="secondary">返回首页</button></div></div></section>
 
     <div id="hud" class="hud hidden">
-      <div class="hud-top"><div class="hero-status paper-strip"><span class="mini-portrait"><img id="hudHeroImage" src="assets/art/hero-balanced.png" alt="" /></span><div class="health-wrap"><span id="hudHeroName">墨小白</span><div class="bar health"><i id="healthBar"></i></div><b id="healthText">120 / 120</b></div></div><div class="timer paper-strip"><small id="phaseLabel">快速成型</small><b id="timerText">08:00</b></div><button id="pauseButton" aria-label="暂停">Ⅱ</button></div>
+      <div class="hud-top"><div class="hero-status paper-strip"><span class="mini-portrait"><img id="hudHeroImage" src="assets/art/character-miaoxiaobai-ink.png" alt="" /></span><div class="health-wrap"><span id="hudHeroName">喵小白</span><div class="bar health"><i id="healthBar"></i></div><b id="healthText">120 / 120</b></div></div><div class="timer paper-strip"><small id="phaseLabel">快速成型</small><b id="timerText">08:00</b></div><button id="pauseButton" aria-label="暂停">Ⅱ</button></div>
       <div id="characterMechanic" class="character-mechanic hidden" aria-live="polite"></div>
       <div id="bossHud" class="boss-hud hidden"><span id="bossName">泼墨狸将 · 第一阶段</span><div class="bar boss"><i id="bossBar"></i></div></div>
       <div class="hud-bottom paper-strip"><div class="level-badge">境 <b id="levelText">1</b></div><div class="bar xp"><i id="xpBar"></i></div><div class="coin-hud">钱 <b id="coinText">0</b></div></div>
@@ -103,8 +115,8 @@
     <aside id="devLab" class="dev-lab hidden" aria-label="开发者测试台"><header class="dev-header"><div><small>DEVELOPER TOOLS</small><strong>INK COMBAT LAB</strong></div><button id="devClose" aria-label="关闭开发者测试台">×</button></header><div id="devLabContent" class="dev-content"></div></aside>
     <div id="rotateNotice">横屏可获得更宽的庭院视野</div>
   </main>
-  <script src="game-data.js?v=2.0"></script>
-  <script src="game.js?v=2.0"></script>
-  <script src="devtools.js?v=2.0"></script>
+  <script src="game-data.js?v=2.2"></script>
+  <script src="game.js?v=2.2"></script>
+  <script src="devtools.js?v=2.2"></script>
 </body>
 </html>
