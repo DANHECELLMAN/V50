@@ -2,7 +2,7 @@
   "use strict";
 
   const $ = id => document.getElementById(id);
-  const { WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, SKILL_TREE_NODES, GROWTH_CARDS, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, LEGACY_ASSET_MAP, INK_FX } = window.MEOW_DATA;
+  const { WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, SKILL_TREE_NODES, GROWTH_CARDS, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, CHARACTER_ANIMATIONS, LEGACY_ASSET_MAP, INK_FX } = window.MEOW_DATA;
   const world = $("world");
   const scene = $("gameScene");
   const damageFlash = $("damageFlash");
@@ -21,6 +21,8 @@
   const imageMarkup = (resource, alt = "") => `<img src="${resource.art}" data-fallback="${resource.fallback_art || resource.legacy_art || ""}" alt="${alt}" draggable="false">`;
   const portraitResource = character => ({ art: character.portrait_art || character.art, fallback_art: character.portrait_fallback_art || character.fallback_art });
   const combatResource = character => ({ art: character.combat_art || character.art, fallback_art: character.combat_fallback_art || character.fallback_art });
+  const animationConfigFor = character => CHARACTER_ANIMATIONS?.[character?.animation_key || ""] || null;
+  const characterFrameStatus = new Map();
   function setArtImage(image, resource, alt = "") {
     if (!image || !resource) return;
     image.alt = alt; image.dataset.fallback = resource.fallback_art || resource.legacy_art || ""; image.dataset.fallbackUsed = ""; image.src = resource.art;
@@ -30,6 +32,93 @@
     if (!(image instanceof HTMLImageElement) || !image.dataset.fallback || image.dataset.fallbackUsed === "1") return;
     image.dataset.fallbackUsed = "1"; image.src = image.dataset.fallback;
   }, true);
+
+  function preloadCharacterAnimations() {
+    for (const config of Object.values(CHARACTER_ANIMATIONS || {})) {
+      for (const stateName of ["move", "attack", "hit", "death"]) for (const frames of Object.values(config.states?.[stateName] || {})) for (const source of frames) {
+          if (characterFrameStatus.has(source)) continue;
+          characterFrameStatus.set(source, "pending");
+          const image = new Image();
+          image.onload = () => characterFrameStatus.set(source, "loaded");
+          image.onerror = () => characterFrameStatus.set(source, "missing");
+          image.src = source;
+        }
+    }
+  }
+  preloadCharacterAnimations();
+
+  function createCharacterAnimation(character) {
+    return { state: "idle", direction: "down", frame: 0, elapsed: 0, speed: 1, available: Boolean(animationConfigFor(character)) };
+  }
+
+  const CHARACTER_ANIMATION_PRIORITY = { idle: 0, move: 0, attack: 1, hit: 2, death: 3 };
+  const characterFramesFor = (config, stateName, direction) => config?.states?.[stateName]?.[direction] || [];
+  function triggerCharacterAnimation(player, stateName, { force = false, restart = false, target = null } = {}) {
+    const config = animationConfigFor(state.character || CHARACTER), animation = player?.animation;
+    if (!config || !animation || !characterFramesFor(config, stateName, animation.direction).length) return false;
+    const currentPriority = CHARACTER_ANIMATION_PRIORITY[animation.state] || 0, nextPriority = CHARACTER_ANIMATION_PRIORITY[stateName] || 0;
+    if (!force && (nextPriority < currentPriority || (animation.state === stateName && !restart))) return false;
+    if (target && Number.isFinite(target.x) && Number.isFinite(target.y)) {
+      animation.direction = resolveMoveDirection(target.x - player.x, target.y - player.y, animation.direction);
+      player.facing = animation.direction === "left" ? -1 : animation.direction === "right" ? 1 : player.facing || 1;
+    }
+    animation.state = stateName; animation.frame = 0; animation.elapsed = 0;
+    return true;
+  }
+
+  function characterAnimationDuration(character, stateName) {
+    const config = animationConfigFor(character), frames = characterFramesFor(config, stateName, "down"), fps = config?.stateFps?.[stateName] || config?.fps || 11;
+    return frames.length ? frames.length / fps : 0;
+  }
+
+  function resolveMoveDirection(x, y, current = "down") {
+    const ax = Math.abs(x), ay = Math.abs(y), horizontal = current === "left" || current === "right";
+    if (horizontal && ax * 1.25 >= ay && ax > .01) return x < 0 ? "left" : "right";
+    if (!horizontal && ay * 1.25 >= ax && ay > .01) return y < 0 ? "up" : "down";
+    return ax > ay ? (x < 0 ? "left" : "right") : (y < 0 ? "up" : "down");
+  }
+
+  function updatePlayerAnimation(player, dt, x, y) {
+    const config = animationConfigFor(state.character || CHARACTER), animation = player.animation ||= createCharacterAnimation(state.character || CHARACTER);
+    if (!config) return;
+    if (["attack", "hit", "death"].includes(animation.state)) {
+      const frames = characterFramesFor(config, animation.state, animation.direction), frameTime = 1 / (config.stateFps?.[animation.state] || config.fps || 11);
+      animation.elapsed += dt * (animation.speed || 1);
+      while (animation.elapsed >= frameTime && frames.length) {
+        animation.elapsed -= frameTime;
+        if (animation.frame < frames.length - 1) animation.frame++;
+        else if (animation.state !== "death") { animation.state = player.moving ? "move" : "idle"; animation.frame = 0; animation.elapsed = 0; break; }
+        else { animation.frame = frames.length - 1; animation.elapsed = 0; break; }
+      }
+      return;
+    }
+    if (!player.moving) { animation.state = "idle"; animation.frame = 0; animation.elapsed = 0; return; }
+    const direction = resolveMoveDirection(x, y, animation.direction);
+    if (animation.state !== "move" || animation.direction !== direction) { animation.state = "move"; animation.direction = direction; animation.frame = 0; animation.elapsed = 0; }
+    animation.elapsed += dt * (animation.speed || 1);
+    const frameTime = 1 / (config.stateFps?.move || config.fps || 11), frames = config.states.move[animation.direction] || [];
+    while (animation.elapsed >= frameTime && frames.length) { animation.elapsed -= frameTime; animation.frame = (animation.frame + 1) % frames.length; }
+  }
+
+  function currentCharacterFrame(character, player) {
+    const config = animationConfigFor(character), animation = player.animation;
+    if (!config || !animation) return combatResource(character);
+    const stateFrames = characterFramesFor(config, animation.state, animation.direction), moveFrames = characterFramesFor(config, "move", animation.direction).length ? characterFramesFor(config, "move", animation.direction) : config.states.move.down || [];
+    const frames = stateFrames.length ? stateFrames : moveFrames;
+    const index = animation.state === "idle" ? (config.states.idle?.[animation.direction] || 0) : animation.frame % Math.max(1, frames.length);
+    let art = frames[index] || frames[0];
+    if (characterFrameStatus.get(art) === "missing") art = frames.find(source => characterFrameStatus.get(source) === "loaded") || moveFrames.find(source => characterFrameStatus.get(source) === "loaded") || combatResource(character).art;
+    return { art, fallback_art: combatResource(character).art || combatResource(character).fallback_art };
+  }
+
+  function updateCharacterSprite(node, character, player) {
+    const image = node.querySelector("img");
+    if (!image) return;
+    const resource = currentCharacterFrame(character, player);
+    if (!resource.art || image.dataset.frameSource === resource.art) return;
+    image.dataset.frameSource = resource.art;
+    setArtImage(image, resource, character.name);
+  }
 
   const ui = {
     menu: $("menu"), how: $("howPanel"), upgrade: $("upgradePanel"), shop: $("shopPanel"), event: $("eventPanel"),
@@ -220,7 +309,7 @@
       level: 1, xp: 0, nextXp: levelXpRequirement(1), pickup: base.pickup, damageMul: base.damageMul,
       attackSpeed: base.attackSpeed, crit: base.crit, size: base.size, armor: base.armor, base,
       runtime: { damage: 1, speed: 1, attackSpeed: 1, crit: 0 }, weapons: { yarn: 1 }, passives: {}, passiveWeights: {}, devices: {}, summonLevels: {}, weaponMastery: {}, weaponMinor: {}, growthCards: {}, moving: false,
-      facing: 1, movedDistance: 0, growthConfig
+      facing: 1, animation: createCharacterAnimation(character), movedDistance: 0, growthConfig
     };
   }
 
@@ -676,7 +765,7 @@
       if (state.timers[id] > 0) return;
       const fired = WEAPON_BEHAVIORS[data.behavior]?.(id, data, stats);
       state.timers[id] = Math.max(.08, stats.cd / attackSpeed);
-      if (fired) sound("shoot");
+      if (fired) { sound("shoot"); triggerCharacterAnimation(player, "attack", { target: nearest(player.x, player.y, stats.range || 620) }); }
     });
     if (player.devices.trap && state.timers.trap <= 0) {
       state.devices.push({ kind: "trap", x: player.x, y: player.y, life: 10, r: 20, level: player.devices.trap });
@@ -808,10 +897,17 @@
     }
     const wardReduction = state.character.key === "qingyan" && cs.wardUntil > state.time ? .35 : 0;
     const damage = Math.max(1, raw * (1 - player.armor) * (1 - wardReduction));
-    player.hp -= damage; player.invuln = .62; state.taken += damage; state.shake = 8; state.flash = .15; sound("hurt");
+    player.hp -= damage; player.invuln = .62; state.taken += damage; state.shake = 8; state.flash = .15; sound("hurt"); triggerCharacterAnimation(player, "hit", { restart: true, target: { x: sourceX, y: sourceY } });
     textPop(player.x, player.y - 30, `-${Math.round(damage)}`, "#d44f42", 17); pushFrom(player, { x: sourceX, y: sourceY }, 20);
     if (player.hp <= 0 && state.character.key === "chihen" && cs.deathGuardReady && cs.deathGuardUntil > state.time) { player.hp = 1; cs.deathGuardReady = false; player.invuln = .6; burst(player.x, player.y, "#b8422f", 12, 66, "FX_007"); textPop(player.x, player.y - 34, "不屈残火", "#f0c6aa", 16); return; }
-    if (player.hp <= 0 && !reviveChihen()) endGame(false);
+    if (player.hp <= 0 && !reviveChihen()) beginPlayerDeath();
+  }
+
+  function beginPlayerDeath() {
+    if (state.mode === "dying" || state.mode === "result") return;
+    const player = state.player, animated = triggerCharacterAnimation(player, "death", { force: true, restart: true });
+    if (!animated) { endGame(false); return; }
+    player.moving = false; state.mode = "dying"; state.deathTimer = characterAnimationDuration(state.character, "death"); ui.joystick.classList.add("hidden");
   }
 
   function spawnBoss() {
@@ -1013,6 +1109,7 @@
     x += joy.x; y += joy.y;
     const length = Math.hypot(x, y);
     player.moving = length > .05;
+    updatePlayerAnimation(player, dt, x, y);
     if (player.moving) {
       x /= Math.max(1, length); y /= Math.max(1, length);
       const oldX = player.x, oldY = player.y;
@@ -1027,6 +1124,12 @@
   }
   function phase() { const progress = state.time / state.duration; if (state.bossSpawned) return "最终决战"; if (progress < .25) return "快速成型"; if (progress < .62) return "中压构筑"; return "高压怪潮"; }
   function update(dt) {
+    if (state.mode === "dying") {
+      if (state.dev && state.devLabOpen && state.devRunPaused) return;
+      updatePlayerAnimation(state.player, dt, 0, 0); updateFx(dt); state.deathTimer -= dt; state.shake = Math.max(0, state.shake - dt * 30); state.flash = Math.max(0, state.flash - dt);
+      if (state.deathTimer <= 0) endGame(false);
+      return;
+    }
     if (state.mode !== "playing" || (state.dev && state.devLabOpen && state.devRunPaused)) return;
     state.time += dt;
     movePlayer(dt); attack(dt); updateCharacterAbilities(dt); updatePlayerWeaponEffects(dt); spawnTick(dt); updateEnemies(dt); updateBoss(dt); updateProjectiles(dt); updatePickups(dt); if (!state.dev) schedules(); updateFx(dt);
@@ -1113,8 +1216,11 @@
     const activeCharacter = state.character || CHARACTER;
     const cs = state.characterState;
     const characterVfxTier = activeCharacter.key === "chihen" && state.growthConfig.flags.revive_vfx_tier ? clamp(1 + cs.revivesUsed,1,3) : 1;
-    const playerNode = ensureNode(playerId, `entity player character-${activeCharacter.key} vfx-tier-${characterVfxTier}${state.player.moving ? " moving" : ""}${state.player.invuln > 0 ? " invulnerable" : ""}${activeCharacter.key === "chihen" && cs.shieldCharges ? " shielded" : ""}`, imageMarkup(combatResource(activeCharacter)));
-    playerNode.style.setProperty("--facing", state.player.facing || 1); playerNode.style.setProperty("--revive-stacks", cs.revivesUsed || 0); place(playerNode, state.player.x, state.player.y);
+    const animationConfig = animationConfigFor(activeCharacter);
+    const playerNode = ensureNode(playerId, `entity player character-${activeCharacter.key} vfx-tier-${characterVfxTier}${animationConfig ? " animated-character" : ""}${state.player.moving ? " moving" : ""}${state.player.invuln > 0 ? " invulnerable" : ""}${activeCharacter.key === "chihen" && cs.shieldCharges ? " shielded" : ""}`, imageMarkup(combatResource(activeCharacter)));
+    if (animationConfig) updateCharacterSprite(playerNode, activeCharacter, state.player);
+    playerNode.dataset.animationState = state.player.animation?.state || "idle"; playerNode.dataset.direction = state.player.animation?.direction || "down"; playerNode.dataset.frame = String(state.player.animation?.frame || 0);
+    playerNode.style.setProperty("--facing", state.player.facing || 1); playerNode.style.setProperty("--revive-stacks", cs.revivesUsed || 0); playerNode.style.setProperty("--sprite-anchor-y", `${-(animationConfig?.anchor?.y || .975) * 100}%`); place(playerNode, state.player.x, state.player.y);
 
     if (activeCharacter.key === "qingyan" && cs.wardUntil > state.time) {
       const id = "qingyan-ward"; active.add(id); const ward = ensureNode(id, "qingyan-ward"); place(ward, state.player.x, state.player.y);
@@ -1241,7 +1347,7 @@
     spawnEnemy: spawnEnemyBatch, spawnMixed, clearNormalEnemies, clearAllEnemies, spawnBoss, forceBossPhase2, setBossHealth, killBoss: killBossForTest,
     openUpgrade: () => openUpgrade(false), openShop, triggerChest, openEvent, triggerEliteWave, setStage, applyPreset, getStats: getDevStats,
     getBuild: getBuildSnapshot, loadBuild: loadBuildSnapshot, resetPlayer: resetDevPlayer, resetRun: () => resetGame(true), clearBattlefield,
-    getConfig: () => ({ WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, GROWTH_CARDS, ENEMY_TYPES, CHARACTERS, INK_FX }), getState: () => state
+    getConfig: () => ({ WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, GROWTH_CARDS, ENEMY_TYPES, CHARACTERS, CHARACTER_ANIMATIONS, INK_FX }), getState: () => state
   };
 
   function loop(now) {
@@ -1272,6 +1378,6 @@
   function moveJoy(event) { const rect = ui.joystick.getBoundingClientRect(), centerX = rect.left + rect.width / 2, centerY = rect.top + rect.height / 2, dx = event.clientX - centerX, dy = event.clientY - centerY, length = Math.hypot(dx, dy), amount = Math.min(1, length / 43); joy.x = length ? dx / length * amount : 0; joy.y = length ? dy / length * amount : 0; ui.joystick.firstElementChild.style.transform = `translate(${joy.x * 34}px,${joy.y * 34}px)`; }
   function endJoy() { joy.active = false; joy.x = joy.y = 0; ui.joystick.firstElementChild.style.transform = ""; }
 
-  window.__MEOW_GAME__ = { getState: () => state, start: resetGame, end: (win = true) => endGame(win), dev: devApi, data: { WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, GROWTH_CARDS, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, LEGACY_ASSET_MAP, INK_FX }, growth: { getState:()=>growth, hasNode:hasGrowthNode, compile:compileGrowthConfig, open:openGrowthPanel } };
+  window.__MEOW_GAME__ = { getState: () => state, start: resetGame, end: (win = true) => endGame(win), dev: devApi, data: { WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, GROWTH_CARDS, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, CHARACTER_ANIMATIONS, LEGACY_ASSET_MAP, INK_FX }, growth: { getState:()=>growth, hasNode:hasGrowthNode, compile:compileGrowthConfig, open:openGrowthPanel } };
   if (new URLSearchParams(location.search).get("dev") === "1") resetGame(true);
 })();

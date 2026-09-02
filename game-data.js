@@ -175,10 +175,27 @@
     fallback_art: `${artRoot}${fallbackFile}`, legacy_art: `${artRoot}${fallbackFile}`,
     combat_art: `${artRoot}${combatFile}`, combat_fallback_art: `${artRoot}${fallbackFile}`
   });
+  const characterFrames = (state, direction, count) => Array.from({ length: count }, (_, index) => `assets/characters/xiaobai/${state}/${direction}/${String(index + 1).padStart(2, "0")}.png`);
+  const directionalFrames = (state, count) => Object.fromEntries(["down", "up", "left", "right"].map(direction => [direction, characterFrames(state, direction, count)]));
+  const CHARACTER_ANIMATIONS = {
+    xiaobai: {
+      characterKey: "moxiaobai",
+      fps: 11,
+      stateFps: { move: 11, attack: 12, hit: 12, death: 8 },
+      anchor: { x: .5, y: .975 },
+      states: {
+        idle: { down: 0, up: 0, left: 0, right: 0 },
+        move: directionalFrames("move", 8),
+        attack: directionalFrames("attack", 5),
+        hit: directionalFrames("hit", 3),
+        death: directionalFrames("death", 6)
+      }
+    }
+  };
   const CHARACTERS = {
     moxiaobai: {
       id: "CHAR_BALANCED", key: "moxiaobai", name: "喵小白", role: "均衡型 / 万金油", status: "ready", status_text: "可出战", palette: "teal", art_key: "character_miaoxiaobai_ink",
-      ...characterAsset("character-miaoxiaobai-ink.png", "hero-balanced.png", "character-miaoxiaobai-combat.svg"), style_theme: "anime_sumi_e", summary: "青碧围巾随步势飞扬，基础扎实、武器自由，依靠本局 Build 应对各种战局。",
+      ...characterAsset("character-miaoxiaobai-ink.png", "hero-balanced.png", "character-miaoxiaobai-combat.svg"), animation_key: "xiaobai", style_theme: "anime_sumi_e", summary: "青碧围巾随步势飞扬，基础扎实、武器自由，依靠本局 Build 应对各种战局。",
       traits: ["6 武器槽", "2 个固定装置槽", "不能使用自主移动召唤物", "基础属性强化效果略高"],
       base_stats: { maxHp: 120, speed: 195, damageMul: 1, attackSpeed: 1.05, crit: .05, size: 1, armor: 0, pickup: 82 },
       slot_rules: { weapon: 6, device: 2, deviceMax: 3, summon: 0 }, mechanics: { type: "standard_build", allowAutonomousSummons: false }
@@ -212,5 +229,5 @@
   };
   const CHARACTER = CHARACTERS.moxiaobai;
 
-  window.MEOW_DATA = { WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, SKILL_TREE_NODES, GROWTH_CARDS, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, LEGACY_ASSET_MAP, INK_FX };
+  window.MEOW_DATA = { WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, SKILL_TREE_NODES, GROWTH_CARDS, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, CHARACTER_ANIMATIONS, LEGACY_ASSET_MAP, INK_FX };
 })();

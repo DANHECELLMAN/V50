@@ -10,6 +10,9 @@
   const content = document.getElementById("devLabContent");
   const BUILD_KEY = "meowGardenDevBuilds.v1";
   let active = false;
+  let animationPreviewRaf = 0;
+  let animationPreviewConfig = null;
+  const animationPreview = { state: "move", direction: "down", speed: 1, frame: 0, elapsed: 0, last: 0 };
 
   const section = (title, body, open = false) => `<details class="dev-section" ${open ? "open" : ""}><summary>${title}</summary><div class="dev-body">${body}</div></details>`;
   const button = (label, action, cls = "") => `<button class="dev-btn ${cls}" data-action="${action}">${label}</button>`;
@@ -21,11 +24,18 @@
   ];
 
   function render() {
-    const { WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES } = api.getConfig();
+    const { WEAPONS, PASSIVES, DEVICES, ENEMY_TYPES, CHARACTERS, CHARACTER_ANIMATIONS } = api.getConfig();
+    animationPreviewConfig = CHARACTER_ANIMATIONS?.xiaobai || null;
     const stats = `<div class="dev-stats">${statItems.map(([id, label]) => `<div class="dev-stat"><b id="devStat-${id}">0</b><small>${label}</small></div>`).join("")}</div>`;
     const runtime = `<div class="dev-grid">${button("暂停", "dev-pause")} ${button("继续", "dev-resume", "accent")}</div>
       <div class="dev-grid cols-4">${[.5,1,2,4].map(v => `<button class="dev-btn" data-speed="${v}">×${v}</button>`).join("")}</div>
       <div class="dev-grid"><label class="dev-check"><input id="devInvincible" data-toggle="invincible" type="checkbox">无敌模式</label><label class="dev-check"><input id="devInfinite" data-toggle="infinite" type="checkbox">无限刷新</label></div>`;
+    const xiaobai = CHARACTERS?.moxiaobai, firstFrame = animationPreviewConfig?.states?.move?.down?.[0], fallback = xiaobai?.combat_art || xiaobai?.art || "";
+    const animationTest = animationPreviewConfig ? `<div class="dev-animation-preview"><img id="devAnimationImage" src="${firstFrame}" data-fallback="${fallback}" alt="喵小白移动动画预览" draggable="false"></div>
+      <div class="dev-animation-readout"><span id="devAnimationDirection">MOVE · DOWN</span><span id="devAnimationFrame">01 / 08 · 11 FPS</span></div>
+      <div class="dev-grid cols-4">${[["move","移动"],["attack","攻击"],["hit","受击"],["death","死亡"]].map(([id,label]) => `<button class="dev-btn ${id === "move" ? "active" : ""}" data-animation-state="${id}">${label}</button>`).join("")}</div>
+      <div class="dev-grid cols-4">${[["up","向上"],["down","向下"],["left","向左"],["right","向右"]].map(([id,label]) => `<button class="dev-btn ${id === "down" ? "active" : ""}" data-animation-direction="${id}">${label}</button>`).join("")}</div>
+      <div class="dev-grid">${[.5,1,2].map(value => `<button class="dev-btn ${value === 1 ? "active" : ""}" data-animation-speed="${value}">动画 ×${value}</button>`).join("")}</div>` : `<p>未注册喵小白移动动画资源。</p>`;
     const player = `${field("level","Level",1,999,1)}${field("hp","当前 HP",0,99999,1)}${field("maxHp","最大 HP",1,99999,1)}${field("speed","移动速度",1,3000,1)}${field("damageMul","伤害倍率",.01,100,.05)}${field("attackSpeed","攻速倍率",.05,30,.05)}${field("crit","暴击率 (0-1)",0,1,.01)}${field("armor","护甲 (0-0.9)",0,.9,.01)}${field("pickup","拾取范围",1,3000,1)}${field("coins","金币",0,999999,1)}${field("rerolls","升级刷新次数",0,999,1)}
       <div class="dev-grid">${button("恢复满血","heal-full","accent")}${button("+1 等级","level-1")}${button("+5 等级","level-5")}</div>`;
     const enemies = Object.entries(ENEMY_TYPES).map(([id, item]) => `<div class="dev-enemy-row"><strong>${item.emoji || ""} ${item.name || id}</strong><button data-enemy="${id}" data-count="1">+1</button><button data-enemy="${id}" data-count="10">+10</button><button data-enemy="${id}" data-count="1" data-elite="1">精英 +1</button></div>`).join("") +
@@ -36,7 +46,7 @@
     const slots = [1,2,3].map(n => `<div class="dev-slot"><span>Slot ${n}</span><button class="dev-btn" data-slot-save="${n}">保存</button><button class="dev-btn" data-slot-load="${n}">加载</button><button class="dev-btn danger-mini" data-slot-delete="${n}">删除</button></div>`).join("");
     const buildTools = `${slots}<div class="dev-grid">${button("复制 Build JSON","copy-json")}${button("导入 Build JSON","import-json","accent")}</div><textarea id="devBuildJson" class="dev-json" spellcheck="false" placeholder="Build JSON 会显示在这里，也可以粘贴后导入"></textarea>`;
     const reset = `<div class="dev-grid">${button("Reset Player","reset-player")}${button("Reset Run","reset-run","warn")}${button("Clear Battlefield","clear-battlefield","danger-mini")}</div>`;
-    content.innerHTML = section("STATISTICS", stats, true) + section("RUN CONTROL", runtime, true) + section("PLAYER", player, true) + section("PRESETS", presets, true) +
+    content.innerHTML = section("STATISTICS", stats, true) + section("RUN CONTROL", runtime, true) + section("ANIMATION TEST", animationTest, true) + section("PLAYER", player, true) + section("PRESETS", presets, true) +
       section("WEAPONS", levelRows("weapon", WEAPONS)) + section("PASSIVES", levelRows("passive", PASSIVES)) + section("DEVICES", levelRows("device", DEVICES)) +
       section("ENEMY SPAWNER", enemies) + section("BOSS TEST", boss) + section("FLOW / EVENTS", flow) + section("BUILD TOOLS", buildTools) + section("RESET TOOLS", reset) + `<div id="devStatus" class="dev-status">Ready.</div>`;
   }
@@ -44,16 +54,40 @@
   function setStatus(message, error = false) {
     const el = document.getElementById("devStatus"); if (!el) return; el.textContent = message; el.style.color = error ? "#ffb8b8" : "#a8ffe9";
   }
-  function openLab() {
-    if (!game.getState().dev) return; lab.classList.remove("hidden"); toggle.setAttribute("aria-expanded", "true"); api.setLabOpen(true); syncAll();
+  function stopAnimationPreview() { if (animationPreviewRaf) cancelAnimationFrame(animationPreviewRaf); animationPreviewRaf = 0; animationPreview.last = 0; }
+  function syncAnimationControls() {
+    document.querySelectorAll("[data-animation-state]").forEach(button => button.classList.toggle("active", button.dataset.animationState === animationPreview.state));
+    document.querySelectorAll("[data-animation-direction]").forEach(button => button.classList.toggle("active", button.dataset.animationDirection === animationPreview.direction));
+    document.querySelectorAll("[data-animation-speed]").forEach(button => button.classList.toggle("active", Number(button.dataset.animationSpeed) === animationPreview.speed));
   }
-  function closeLab() { lab.classList.add("hidden"); toggle.setAttribute("aria-expanded", "false"); api.setLabOpen(false); }
+  function startAnimationPreview() {
+    stopAnimationPreview();
+    if (!animationPreviewConfig) return;
+    const tick = now => {
+      if (!active || lab.classList.contains("hidden")) { animationPreviewRaf = 0; return; }
+      const frames = animationPreviewConfig.states[animationPreview.state]?.[animationPreview.direction] || animationPreviewConfig.states.move[animationPreview.direction] || [];
+      const delta = animationPreview.last ? Math.min(.1, (now - animationPreview.last) / 1000) : 0; animationPreview.last = now;
+      animationPreview.elapsed += delta * animationPreview.speed;
+      const previewFps = animationPreviewConfig.stateFps?.[animationPreview.state] || animationPreviewConfig.fps || 11, frameTime = 1 / previewFps;
+      while (animationPreview.elapsed >= frameTime && frames.length) { animationPreview.elapsed -= frameTime; animationPreview.frame = (animationPreview.frame + 1) % frames.length; }
+      const image = document.getElementById("devAnimationImage"), source = frames[animationPreview.frame];
+      if (image && source && image.dataset.frameSource !== source) { image.dataset.frameSource = source; image.dataset.fallbackUsed = ""; image.src = source; }
+      const direction = document.getElementById("devAnimationDirection"), frame = document.getElementById("devAnimationFrame");
+      if (direction) direction.textContent = `${animationPreview.state.toUpperCase()} · ${animationPreview.direction.toUpperCase()}`; if (frame) frame.textContent = `${String(animationPreview.frame + 1).padStart(2,"0")} / ${String(frames.length).padStart(2,"0")} · ${previewFps} FPS`;
+      animationPreviewRaf = requestAnimationFrame(tick);
+    };
+    animationPreviewRaf = requestAnimationFrame(tick);
+  }
+  function openLab() {
+    if (!game.getState().dev) return; lab.classList.remove("hidden"); toggle.setAttribute("aria-expanded", "true"); api.setLabOpen(true); syncAll(); syncAnimationControls(); startAnimationPreview();
+  }
+  function closeLab() { stopAnimationPreview(); lab.classList.add("hidden"); toggle.setAttribute("aria-expanded", "false"); api.setLabOpen(false); }
   function activate() {
     const state = game.getState(); if (!state.dev) return;
     if (!active) { active = true; render(); }
     document.body.classList.add("dev-mode"); toggle.classList.remove("hidden"); openLab();
   }
-  function deactivate() { document.body.classList.remove("dev-mode"); toggle.classList.add("hidden"); lab.classList.add("hidden"); active = false; }
+  function deactivate() { stopAnimationPreview(); document.body.classList.remove("dev-mode"); toggle.classList.add("hidden"); lab.classList.add("hidden"); active = false; }
 
   function stateLevel(kind, id) {
     const p = game.getState().player; return kind === "weapon" ? p.weapons[id] || 0 : kind === "passive" ? p.passives[id] || 0 : p.devices[id] || 0;
@@ -97,6 +131,9 @@
   };
 
   content.addEventListener("click", event => {
+    const animationState=event.target.closest("[data-animation-state]");if(animationState){animationPreview.state=animationState.dataset.animationState;animationPreview.frame=0;animationPreview.elapsed=0;syncAnimationControls();return;}
+    const animationDirection=event.target.closest("[data-animation-direction]");if(animationDirection){animationPreview.direction=animationDirection.dataset.animationDirection;animationPreview.frame=0;animationPreview.elapsed=0;syncAnimationControls();return;}
+    const animationSpeed=event.target.closest("[data-animation-speed]");if(animationSpeed){animationPreview.speed=Number(animationSpeed.dataset.animationSpeed)||1;syncAnimationControls();return;}
     const levelButton=event.target.closest("[data-level-kind]");if(levelButton){const kind=levelButton.dataset.levelKind,id=levelButton.dataset.levelId,next=stateLevel(kind,id)+Number(levelButton.dataset.delta);if(kind==="weapon")api.setWeaponLevel(id,next);if(kind==="passive")api.setPassiveLevel(id,next);if(kind==="device")api.setDeviceLevel(id,next);syncAll();return;}
     const enemy=event.target.closest("[data-enemy]");if(enemy){api.spawnEnemy(enemy.dataset.enemy,Number(enemy.dataset.count),enemy.dataset.elite==="1");return;}
     const mixed=event.target.closest("[data-mixed]");if(mixed){api.spawnMixed(Number(mixed.dataset.mixed));return;}
