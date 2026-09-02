@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 128">
+  <defs><linearGradient id="stone" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7b8585"/><stop offset="1" stop-color="#303b3f"/></linearGradient><linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e0c477"/><stop offset="1" stop-color="#76613b"/></linearGradient></defs>
+  <ellipse cx="72" cy="110" rx="50" ry="9" fill="#1c2424" opacity=".23"/>
+  <path d="M31 77 20 54l22 5 14-20h40l12 21 22-6-12 25-2 28H31Z" fill="url(#stone)" stroke="#222b2e" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M43 58 35 28l28 16M99 57l10-29-29 16" fill="#4a575a" stroke="#222b2e" stroke-width="7" stroke-linejoin="round"/>
+  <path d="m48 58 15-11h20l15 11 12 30-20 19H54L34 88Z" fill="#647073" stroke="#293235" stroke-width="5"/>
+  <path d="M49 72h18l-6 10-14-3M96 72H78l6 10 14-3" fill="#d7bd71" stroke="#263033" stroke-width="4"/>
+  <circle cx="57" cy="75" r="3" fill="#192327"/><circle cx="88" cy="75" r="3" fill="#192327"/>
+  <path d="m72 83 9 7-9 8-9-8Z" fill="#292f2f" stroke="#161e20" stroke-width="3"/>
+  <path d="M49 49 58 31h29l9 18-8 10H58Z" fill="url(#gold)" stroke="#263033" stroke-width="5"/>
+  <path d="M62 35 72 50l10-15M45 100l-6 16h22l4-10M99 100l6 16H83l-4-10" fill="none" stroke="#252e30" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M23 96c19 9 75 16 112 1" fill="none" stroke="#5b6a69" stroke-width="5" stroke-linecap="round" stroke-dasharray="18 9" opacity=".6"/>
+</svg>
