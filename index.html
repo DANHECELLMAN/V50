@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#e9dfc9" />
   <title>喵勇者：墨韵庭院</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%23efe6d2'/%3E%3Cpath d='M18 20 24 8l8 10 8-10 7 13c7 14-1 31-15 31S11 35 18 20Z' fill='%23d88336' stroke='%231d211d' stroke-width='5'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="styles.css?v=2.2" />
+  <link rel="stylesheet" href="styles.css?v=4.0" />
 </head>
 <body>
   <main id="app">
     <div id="gameScene" class="game-scene" aria-label="动漫水墨风战斗场景">
-      <div id="world" class="world" aria-hidden="true"></div>
+      <div id="world" class="world" aria-hidden="true"><div id="sceneLayers" class="scene-layers"></div></div>
       <div id="damageFlash" class="damage-flash" aria-hidden="true"></div>
     </div>
 
@@ -25,7 +25,7 @@
 
         <div class="home-actions">
           <button id="continueButton" class="home-big-action continue-home hidden"><span class="paw-mark">续</span><b>继续游戏</b><small>返回最近一次庭院行迹</small></button>
-          <button id="startButton" class="home-big-action primary-home"><span class="paw-mark">爪</span><b>开始冒险</b><small>踏入墨韵旧庭 · 八分钟试炼</small></button>
+          <button id="startButton" class="home-big-action primary-home"><span class="paw-mark">爪</span><b>开始冒险</b><small>踏入墨韵旧庭 · 十五分钟试炼</small></button>
           <div class="home-nav" aria-label="功能入口">
             <button id="characterButton" class="home-nav-item"><span>侠</span><b>角色</b></button>
             <button id="growthButton" class="home-nav-item"><span>芽</span><b>成长</b></button>
@@ -56,7 +56,7 @@
           <div id="homeCharacterTraits" class="scroll-traits"><span>6 武器槽</span><span>2 固定装置槽</span></div>
           <h3>基础属性</h3>
           <div class="scroll-stats"><span>生命 <b id="homeStatHp">120</b></span><span>移速 <b id="homeStatSpeed">195</b></span><span>暴击 <b id="homeStatCrit">5%</b></span><span>武器槽 <b id="homeStatWeapons">6</b></span></div>
-          <div class="chapter-card"><small>当前章节</small><b>第一章 · 竹庭试炼</b><span>单局目标：坚持八分钟并击败泼墨狸将</span></div>
+          <div class="chapter-card"><small>当前章节</small><b>第一章 · 竹庭试炼</b><span>单局目标：坚持十五分钟并击败泼墨狸将</span></div>
         </aside>
 
         <p class="home-footnote">单机离线 · 无需联网　|　电脑 WASD / 方向键　|　手机拖动摇杆</p>
@@ -81,12 +81,18 @@
     <section id="growthPanel" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="growthPanelTitle">
       <div class="panel growth-panel ink-panel">
         <button class="close" data-close="growthPanel" aria-label="关闭">×</button>
-        <div class="growth-heading"><div><p class="eyebrow">角色成长 · V2</p><h2 id="growthPanelTitle">三侠墨脉技能树</h2><p>局外成长以机制、专属卡与视觉进化为主；未投入技能树也可正常挑战。</p></div><div class="growth-wallet"><small>可用铜钱</small><b id="growthCoins">0</b></div></div>
+        <div class="growth-heading"><div><p class="eyebrow">角色成长 · 万灵图录版</p><h2 id="growthPanelTitle">技能树</h2><p>修行点用于永久解锁节点；终局节点会锁定流派，重置后可重新选择。</p></div><div class="growth-tools"><div class="growth-wallet"><small>修行点 SP</small><b id="growthCoins">0</b></div><button id="growthReset" class="growth-reset" aria-label="重置当前角色技能树">↻ 重置</button></div></div>
         <div id="growthCharacterTabs" class="growth-tabs" role="tablist"></div>
-        <div class="growth-legend"><span><i class="base"></i>基础</span><span><i class="mechanic"></i>机制</span><span><i class="vfx"></i>视觉</span><span><i class="slot"></i>槽位</span><span><i class="challenge"></i>挑战/突破</span></div>
         <div id="growthSummary" class="growth-summary"></div>
-        <div id="skillTree" class="skill-tree" aria-live="polite"></div>
-        <footer class="growth-footer"><p id="growthStatus">选择可解锁的节点，效果会在下一局自动生效。</p><button id="growthReset" class="secondary">重置当前角色</button></footer>
+        <div class="growth-route-heading"><div><b>选择修行方向</b><small>点击一项，打开该技能的升级路线</small></div></div>
+        <div id="growthBranches" class="growth-branches" role="group" aria-label="技能路线"></div>
+        <footer class="growth-footer"><p id="growthStatus">点击技能卡片进入升级窗口；修行效果会在下一局自动生效。</p><span>自动保存于当前浏览器</span></footer>
+        <div id="growthBranchWindow" class="growth-branch-window hidden" role="dialog" aria-modal="true" aria-labelledby="growthBranchTitle">
+          <div class="growth-branch-dialog">
+            <header class="growth-branch-header"><div><small id="growthBranchKicker">技能修行</small><h3 id="growthBranchTitle">升级路线</h3></div><button id="growthBranchClose" aria-label="返回技能选择">×</button></header>
+            <div class="growth-workspace"><div id="skillTree" class="skill-tree" aria-live="polite"></div><aside id="growthNodeDetail" class="growth-node-detail" aria-live="polite"></aside></div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -103,20 +109,22 @@
     <section id="resultPanel" class="screen hidden"><div class="result-card ink-panel"><div id="resultBadge" class="result-badge">胜</div><p id="resultKicker" class="eyebrow">墨战落幕</p><h2 id="resultTitle">旧庭重归宁静</h2><p id="resultLine" class="result-line">最后一笔落下，群墨归纸。</p><div id="resultStats" class="stats-grid"></div><div id="resultBuild" class="result-build"></div><div class="menu-actions"><button id="againButton" class="primary">再入一局</button><button id="menuButton" class="secondary">返回首页</button></div></div></section>
 
     <div id="hud" class="hud hidden">
-      <div class="hud-top"><div class="hero-status paper-strip"><span class="mini-portrait"><img id="hudHeroImage" src="assets/art/character-miaoxiaobai-ink.png" alt="" /></span><div class="health-wrap"><span id="hudHeroName">喵小白</span><div class="bar health"><i id="healthBar"></i></div><b id="healthText">120 / 120</b></div></div><div class="timer paper-strip"><small id="phaseLabel">快速成型</small><b id="timerText">08:00</b></div><button id="pauseButton" aria-label="暂停">Ⅱ</button></div>
+      <div class="hud-top"><div class="hero-status paper-strip"><span class="mini-portrait"><img id="hudHeroImage" src="assets/art/character-miaoxiaobai-ink.png" alt="" /></span><div class="health-wrap"><span id="hudHeroName">喵小白</span><div class="bar health"><i id="healthBar"></i></div><b id="healthText">120 / 120</b></div></div><div class="timer paper-strip"><small id="phaseLabel">66日 · 墨迹初生</small><b id="timerText">15:00</b></div><button id="pauseButton" aria-label="暂停">Ⅱ</button></div>
       <div id="characterMechanic" class="character-mechanic hidden" aria-live="polite"></div>
       <div id="bossHud" class="boss-hud hidden"><span id="bossName">泼墨狸将 · 第一阶段</span><div class="bar boss"><i id="bossBar"></i></div></div>
       <div class="hud-bottom paper-strip"><div class="level-badge">境 <b id="levelText">1</b></div><div class="bar xp"><i id="xpBar"></i></div><div class="coin-hud">钱 <b id="coinText">0</b></div></div>
+      <div id="activeSkillBar" class="active-skill-bar" aria-label="角色主动技能"></div>
       <div id="objectiveToast" class="objective-toast hidden"></div><div id="weaponDock" class="weapon-dock"></div>
     </div>
 
     <div id="joystick" class="joystick hidden"><div></div></div>
     <button id="devToggle" class="dev-toggle hidden" aria-controls="devLab" aria-expanded="false">DEV</button>
     <aside id="devLab" class="dev-lab hidden" aria-label="开发者测试台"><header class="dev-header"><div><small>DEVELOPER TOOLS</small><strong>INK COMBAT LAB</strong></div><button id="devClose" aria-label="关闭开发者测试台">×</button></header><div id="devLabContent" class="dev-content"></div></aside>
+    <section id="visualTestPanel" class="visual-test-panel hidden" role="dialog" aria-modal="true" aria-labelledby="visualTestTitle"><header><div><small>DEV ONLY · RESOURCE INSPECTOR</small><h2 id="visualTestTitle">VISUAL / ASSET TEST</h2></div><button id="visualTestClose" aria-label="关闭美术验收台">×</button></header><div id="visualTestContent" class="visual-test-content"></div></section>
     <div id="rotateNotice">横屏可获得更宽的庭院视野</div>
   </main>
-  <script src="game-data.js?v=2.4"></script>
-  <script src="game.js?v=2.4"></script>
-  <script src="devtools.js?v=2.4"></script>
+  <script src="game-data.js?v=4.0"></script>
+  <script src="game.js?v=4.0"></script>
+  <script src="devtools.js?v=4.0"></script>
 </body>
 </html>

@@ -2,8 +2,9 @@
   "use strict";
 
   const $ = id => document.getElementById(id);
-  const { WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, SKILL_TREE_NODES, GROWTH_CARDS, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, CHARACTER_ANIMATIONS, LEGACY_ASSET_MAP, INK_FX } = window.MEOW_DATA;
+  const { WEAPONS, PASSIVES, DEVICES, SUMMONS, QINGYAN_SUMMON_CATALOG, SKILL_TREE, SKILL_TREE_NODES, GROWTH_CARDS, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, CHARACTER_ANIMATIONS, CHARACTER_COMBAT_KITS, LEGACY_ASSET_MAP, INK_FX, ASSET_MANIFEST, VFX_LIBRARY, SCENE_LAYERS, RUN_TIMELINE } = window.MEOW_DATA;
   const world = $("world");
+  const sceneLayers = $("sceneLayers");
   const scene = $("gameScene");
   const damageFlash = $("damageFlash");
   const TAU = Math.PI * 2;
@@ -16,9 +17,21 @@
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const fmt = seconds => `${String((seconds / 60) | 0).padStart(2, "0")}:${String(seconds % 60 | 0).padStart(2, "0")}`;
   const fxMeta = id => INK_FX?.[id] || INK_FX?.FX_001 || { visual: "brush-slash", maxParticles: 10 };
+  const combatKitFor = character => CHARACTER_COMBAT_KITS?.[character?.key] || CHARACTER_COMBAT_KITS?.moxiaobai;
   const fxClass = id => `fx-${fxMeta(id).visual}`;
   const weaponClass = id => id ? `weapon-${String(id).toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
-  const imageMarkup = (resource, alt = "") => `<img src="${resource.art}" data-fallback="${resource.fallback_art || resource.legacy_art || ""}" alt="${alt}" draggable="false">`;
+  function assetEntry(resource) {
+    const assetId = resource?.asset_id;
+    if (!assetId) return null;
+    const [kind, id] = assetId.split(".");
+    const group = kind === "character" ? "characters" : kind === "enemy" ? "enemies" : kind === "boss" ? "bosses" : kind;
+    return ASSET_MANIFEST?.[group]?.[id] || null;
+  }
+  function spriteResource(resource) {
+    const entry = assetEntry(resource), sprite = entry?.sprite || {};
+    return { art:sprite.art || resource?.art || "", fallback_art:sprite.fallback_art || resource?.fallback_art || resource?.legacy_art || "" };
+  }
+  const imageMarkup = (resource, alt = "") => { const sprite=spriteResource(resource); return `<img src="${sprite.art}" data-fallback="${sprite.fallback_art}" alt="${alt}" draggable="false">`; };
   const portraitResource = character => ({ art: character.portrait_art || character.art, fallback_art: character.portrait_fallback_art || character.fallback_art });
   const combatResource = character => ({ art: character.combat_art || character.art, fallback_art: character.combat_fallback_art || character.fallback_art });
   const animationConfigFor = character => CHARACTER_ANIMATIONS?.[character?.animation_key || ""] || null;
@@ -44,8 +57,31 @@
           image.src = source;
         }
     }
+    for (const group of [ASSET_MANIFEST?.characters, ASSET_MANIFEST?.enemies, ASSET_MANIFEST?.bosses]) for (const config of Object.values(group || {})) {
+      for (const stateFrames of Object.values(config.animations || {})) for (const frames of Object.values(stateFrames || {})) for (const source of Array.isArray(frames) ? frames : []) {
+        if (characterFrameStatus.has(source)) continue;
+        characterFrameStatus.set(source, "pending");
+        const image = new Image(); image.onload = () => characterFrameStatus.set(source, "loaded"); image.onerror = () => characterFrameStatus.set(source, "missing"); image.src = source;
+      }
+    }
   }
   preloadCharacterAnimations();
+
+  function initializeSceneLayers() {
+    if (!sceneLayers || !SCENE_LAYERS) return;
+    sceneLayers.replaceChildren();
+    for (const layerName of ["ground","obstacle","decoration","landmark","environment_overlay"]) {
+      const layer=document.createElement("div"); layer.className=`scene-layer scene-layer-${layerName.replace("_","-")}`; layer.dataset.layer=layerName;
+      for (const item of SCENE_LAYERS[layerName] || []) {
+        const image=document.createElement("img"); image.alt=""; image.dataset.assetId=item.id; image.dataset.fallback=item.fallback_art||""; image.dataset.fallbackUsed=""; image.src=item.art;
+        image.style.setProperty("--scene-x",`${(item.x ?? .5)*100}%`); image.style.setProperty("--scene-y",`${(item.y ?? .5)*100}%`); image.style.setProperty("--scene-scale",item.scale ?? 1); image.style.opacity=String(item.opacity ?? 1);
+        image.addEventListener("error",()=>{ if(image.dataset.fallback && image.dataset.fallbackUsed!=="1"){image.dataset.fallbackUsed="1";image.src=image.dataset.fallback;}else image.classList.add("asset-missing"); });
+        layer.appendChild(image);
+      }
+      sceneLayers.appendChild(layer);
+    }
+  }
+  initializeSceneLayers();
 
   function createCharacterAnimation(character) {
     return { state: "idle", direction: "down", frame: 0, elapsed: 0, speed: 1, available: Boolean(animationConfigFor(character)) };
@@ -111,6 +147,38 @@
     return { art, fallback_art: combatResource(character).art || combatResource(character).fallback_art };
   }
 
+  const configuredFrames = (resource, stateName, direction) => {
+    const frames=assetEntry(resource)?.animations?.[stateName]?.[direction];
+    return Array.isArray(frames) ? frames : [];
+  };
+  function createConfiguredAnimation(resource) {
+    const entry=assetEntry(resource);
+    return entry ? { state:"move", direction:"down", frame:0, elapsed:0 } : null;
+  }
+  function triggerConfiguredAnimation(entity, stateName) {
+    if (!entity?.animation || !configuredFrames(entity,stateName,entity.animation.direction).length) return false;
+    entity.animation.state=stateName; entity.animation.frame=0; entity.animation.elapsed=0; return true;
+  }
+  function configuredAnimationDuration(resource,stateName){const entry=assetEntry(resource),frames=configuredFrames(resource,stateName,"down");return frames.length/Math.max(1,entry?.stateFps?.[stateName]||entry?.fps||8);}
+  function updateConfiguredAnimation(entity, dt, dx=0, dy=0) {
+    const animation=entity?.animation, entry=assetEntry(entity); if(!animation||!entry)return;
+    const locked=["attack","hit","death"].includes(animation.state), direction=resolveMoveDirection(dx,dy,animation.direction);
+    if(!locked&&Math.hypot(dx,dy)>.01){animation.state="move";animation.direction=direction;}
+    let frames=configuredFrames(entity,animation.state,animation.direction);
+    if(!frames.length){animation.state="move";frames=configuredFrames(entity,"move",animation.direction);}
+    if(!frames.length)return;
+    const fps=entry.stateFps?.[animation.state]||entry.fps||8; animation.elapsed+=dt;
+    while(animation.elapsed>=1/fps){animation.elapsed-=1/fps;animation.frame++;
+      if(animation.frame>=frames.length){if(locked&&animation.state!=="death"){animation.state="move";animation.frame=0;}else animation.frame=animation.state==="death"?frames.length-1:0;}
+    }
+  }
+  function configuredFrameResource(resource) {
+    const entry=assetEntry(resource), animation=resource?.animation; if(!entry||!animation)return spriteResource(resource);
+    const frames=configuredFrames(resource,animation.state,animation.direction), source=frames[animation.frame]||frames[0];
+    if(!source||characterFrameStatus.get(source)==="missing")return spriteResource(resource);
+    return {art:source,fallback_art:entry.sprite?.art||entry.sprite?.fallback_art||resource.fallback_art||""};
+  }
+
   function updateCharacterSprite(node, character, player) {
     const image = node.querySelector("img");
     if (!image) return;
@@ -126,7 +194,7 @@
     healthBar: $("healthBar"), healthText: $("healthText"), xpBar: $("xpBar"), levelText: $("levelText"),
     timerText: $("timerText"), phaseLabel: $("phaseLabel"), coinText: $("coinText"), bossHud: $("bossHud"),
     bossBar: $("bossBar"), bossName: $("bossName"), toast: $("objectiveToast"), dock: $("weaponDock"),
-    choices: $("upgradeChoices"), rerolls: $("rerollCount"), shopChoices: $("shopChoices"), shopCoins: $("shopCoins"), build: $("buildSummary"), mechanic: $("characterMechanic")
+    choices: $("upgradeChoices"), rerolls: $("rerollCount"), shopChoices: $("shopChoices"), shopCoins: $("shopCoins"), build: $("buildSummary"), mechanic: $("characterMechanic"), skills: $("activeSkillBar")
   };
 
   const profile = (() => {
@@ -137,19 +205,22 @@
   const syncProfile = () => { $("profileCoins").textContent = profile.coins; $("bestTime").textContent = fmt(profile.best); };
   syncProfile();
 
-  const GROWTH_KEY = "meowGardenGrowth.v2";
+  const GROWTH_KEY = "meowGardenGrowth.v3";
   const growth = (() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(GROWTH_KEY) || "{}");
-      return { version: 2, unlocked: {}, choices: {}, challenges: {}, ...saved, unlocked: { ...(saved.unlocked || {}) }, choices: { ...(saved.choices || {}) }, challenges: { ...(saved.challenges || {}) } };
-    } catch { return { version: 2, unlocked: {}, choices: {}, challenges: {} }; }
+      const current = JSON.parse(localStorage.getItem(GROWTH_KEY) || "null"), legacy = JSON.parse(localStorage.getItem("meowGardenGrowth.v2") || "{}");
+      const saved = current || legacy, isLegacy = !current;
+      const unlocked = isLegacy ? {} : { ...(saved.unlocked || {}) };
+      const migratedPoints = isLegacy ? Math.max(10, Object.keys(saved.unlocked || {}).length) : 10;
+      return { version:3, sp:migratedPoints, unlocked, preferences:{ qingyan:["mouse","rabbit"] }, ...saved, version:3, sp:Number.isFinite(saved.sp)?saved.sp:migratedPoints, unlocked, preferences:{ qingyan:["mouse","rabbit"], ...(saved.preferences || {}) } };
+    } catch { return { version:3, sp:10, unlocked:{}, preferences:{ qingyan:["mouse","rabbit"] } }; }
   })();
   const saveGrowth = () => localStorage.setItem(GROWTH_KEY, JSON.stringify(growth));
   const growthNodesFor = character => SKILL_TREE?.[character.id] || [];
   const hasGrowthNode = nodeId => Boolean(growth.unlocked[nodeId]);
-  const growthSpent = character => growthNodesFor(character).reduce((sum, node) => sum + (hasGrowthNode(node.node_id) ? node.coin_cost : 0), 0);
+  const growthSpent = character => growthNodesFor(character).reduce((sum, node) => sum + (hasGrowthNode(node.node_id) ? node.sp_cost : 0), 0);
   function compileGrowthConfig(character) {
-    const config = { stats: {}, slots: {}, flags: {}, vfx: {}, revive: { lives: 0 }, summons: { damage: 1, hp: 1, energy: 1, respawn: 1, respawnAttackSpeed: 0, respawnBuffDuration: 0 }, startSummons: [] };
+    const config = { stats: {}, slots: {}, flags: {}, vfx: {}, revive: { lives: 0 }, summons: { damage: 1, hp: 1, energy: 1, respawn: 1, respawnAttackSpeed: 0, respawnBuffDuration: 0, unlocked:new Set(["mouse","rabbit","guardian"]), starCap:1 }, startSummons: [] };
     const addStat = (stat, mode, value) => {
       const entry = config.stats[stat] ||= { add: 0, mult: 1 };
       if (mode === "add") entry.add += value; else entry.mult *= 1 + value;
@@ -162,17 +233,18 @@
         else addStat(effect.stat, effect.mode, effect.value);
       }
       if (effect.op === "add_slot") config.slots[effect.target] = (config.slots[effect.target] || 0) + effect.value;
-      if (effect.op === "add_trigger_effect") config.flags[effect.trigger] = { ...effect, nodeId: node.node_id };
+      if (effect.op === "add_trigger_effect") {
+        if (effect.trigger === "unlock_summon") config.summons.unlocked.add(effect.id);
+        else if (effect.trigger === "summon_star_cap") config.summons.starCap = Math.max(config.summons.starCap,effect.value);
+        else config.flags[effect.trigger] = { ...effect, nodeId: node.node_id };
+      }
       if (effect.op === "modify_revive") { if (effect.lives) config.revive.lives += effect.lives; if (effect.retention) config.revive.retention = effect.retention; }
       if (effect.op === "modify_summon_respawn") { config.summons.respawn *= effect.multiplier; config.summons.respawnAttackSpeed = effect.attackSpeed; config.summons.respawnBuffDuration = effect.duration; }
       if (effect.op === "set_min_vfx_tier") config.vfx[effect.target] = { level: effect.level || 1, tier: effect.tier };
       if (effect.op === "start_with_summon") config.startSummons.push({ id: effect.id, level: effect.level || 1 });
     }));
-    const breakthrough = growth.choices[character.id];
-    config.breakthrough = breakthrough || null;
-    if (character.key === "qingyan" && growth.challenges.summoner_no_summon === "complete") config.slots.summon = (config.slots.summon || 0) + 1;
-    if (breakthrough === "BREAK_NINE_A") { config.revive.lives++; config.revive.retention = .65; }
-    if (breakthrough === "BREAK_SUM_B") { config.slots.summon = (config.slots.summon || 0) - 1; config.summons.damage *= 1.22; config.summons.hp *= 1.20; }
+    config.summons.unlocked = [...config.summons.unlocked];
+    config.preferences = growth.preferences?.qingyan || ["mouse","rabbit"];
     return config;
   }
 
@@ -189,7 +261,7 @@
     $("homeCharacterRole").textContent = character.role; $("homeCharacterSummary").textContent = character.summary;
     $("homeCharacterTraits").innerHTML = character.traits.slice(0, 4).map(trait => `<span>${trait}</span>`).join("");
     $("homeStatHp").textContent = Math.round(statValue("maxHp")); $("homeStatSpeed").textContent = Math.round(statValue("speed")); $("homeStatCrit").textContent = `${Math.round(statValue("crit") * 100)}%`; $("homeStatWeapons").textContent = character.slot_rules.weapon + (growthConfig.slots.weapon || 0);
-    start.disabled = !ready; start.classList.toggle("locked-home", !ready); start.querySelector("b").textContent = ready ? "开始冒险" : `${character.name}开发中`; start.querySelector("small").textContent = ready ? "踏入墨韵旧庭 · 八分钟试炼" : "请在角色卷中选择喵小白出战";
+    start.disabled = !ready; start.classList.toggle("locked-home", !ready); start.querySelector("b").textContent = ready ? "开始冒险" : `${character.name}开发中`; start.querySelector("small").textContent = ready ? "踏入墨韵旧庭 · 十五分钟试炼" : "请在角色卷中选择喵小白出战";
   }
   function renderCharacterChoices() {
     $("characterChoices").innerHTML = Object.values(CHARACTERS).map(character => `<button class="character-choice ${character.palette} ${character.status !== "ready" ? "is-development" : ""}" data-character="${character.key}"><span class="character-choice-art">${imageMarkup(portraitResource(character), character.name)}</span><span class="character-choice-copy"><small>${character.status_text}</small><b>${character.name}</b><em>${character.role}</em><p>${character.summary}</p><span>${character.traits.join(" · ")}</span></span></button>`).join("");
@@ -199,66 +271,66 @@
     const titles = { growth: ["成长", "成长树兼容接口"], weapons: ["武器 / Build", "十二道水墨兵势"], settings: ["设置", "游戏设置"], save: ["存档", "庭院行迹"] };
     const [kicker, title] = titles[type] || ["庭院卷册", "功能信息"]; $("infoKicker").textContent = kicker; $("infoTitle").textContent = title;
     if (type === "weapons") $("infoBody").innerHTML = `<div class="weapon-catalog">${Object.values(WEAPONS).map(weapon => `<article><span>${weapon.icon}</span><div><b>${weapon.name}</b><small>${weapon.tags}</small><p>${weapon.desc}</p></div></article>`).join("")}</div>`;
-    else if (type === "growth") $("infoBody").innerHTML = `<div class="paper-message"><b>成长树将在后续阶段开放</b><p>本轮已经为三名角色预留武器、装置、召唤槽与专属机制配置；当前不会新增未经策划确认的成长节点。</p></div>`;
+    else if (type === "growth") $("infoBody").innerHTML = `<div class="paper-message"><b>三角色技能树已开放</b><p>使用修行点解锁基础、专属武器、主动技能、大招与万灵图录节点；正式局结算会获得修行点。</p></div>`;
     else if (type === "settings") $("infoBody").innerHTML = `<div class="paper-message"><b>基础设置</b><p>电脑使用 WASD / 方向键移动，P 或 Esc 暂停；手机使用左下摇杆。动画会遵循系统“减少动态效果”设置。</p><p>当前 Demo 为单机离线版本，不包含账号、联网大厅或商城。</p></div>`;
     else $("infoBody").innerHTML = `<div class="save-info"><div><small>累计铜钱</small><b>${profile.coins}</b></div><div><small>最高存活</small><b>${fmt(profile.best)}</b></div><div><small>通关次数</small><b>${profile.wins}</b></div></div><p class="panel-note">正式进度保存在当前浏览器的 localStorage；DEV 测试数据不会写入正式记录。</p>`;
     $("infoPanel").classList.remove("hidden");
   }
-  const nodeTypeLabel = type => ({ BASE:"基础", MECHANIC:"机制", CORE:"核心", VFX:"视觉", POOL:"卡池", SLOT:"槽位", CHALLENGE:"挑战", BREAKTHROUGH:"突破" }[type] || type);
+  const nodeTypeLabel = type => ({ BASE:"基础", WEAPON:"武器", SKILL:"主动", CORE:"核心", SUMMON:"图录", DEVICE:"装置", ULTIMATE:"大招" }[type] || type);
   let growthCharacterKey = "moxiaobai";
-  let pendingChallenge = null;
+  let growthBranch = "";
+  let selectedGrowthNodeId = "";
+  let growthBranchOpen = false;
   function openGrowthPanel(characterKey = homeCharacterKey) {
     growthCharacterKey = CHARACTERS[characterKey] ? characterKey : "moxiaobai";
+    growthBranchOpen = false;
     renderGrowthPanel(); $("growthPanel").classList.remove("hidden");
   }
+  function closeGrowthBranch(){growthBranchOpen=false;$("growthBranchWindow").classList.add("hidden");}
   function growthNodeAvailable(node, character) {
     if (!node.prerequisites.every(hasGrowthNode)) return false;
-    if (node.node_type !== "BREAKTHROUGH") return true;
-    const challenge = growthNodesFor(character).find(item => item.node_type === "CHALLENGE")?.challenge_id;
-    return !challenge || growth.challenges[challenge] === "complete";
+    if (node.require_count && node.require_count.ids.filter(hasGrowthNode).length < node.require_count.count) return false;
+    if (node.exclusive_group && growthNodesFor(character).some(other => other.node_id !== node.node_id && other.exclusive_group === node.exclusive_group && hasGrowthNode(other.node_id))) return false;
+    if (node.choice_group && growthNodesFor(character).some(other => other.node_id !== node.node_id && other.choice_group === node.choice_group && hasGrowthNode(other.node_id))) return false;
+    return true;
   }
+  function renderGrowthDetail(character,nodes,node) {
+    const target=node||nodes[0];if(!target){$("growthNodeDetail").innerHTML="";return;}
+    selectedGrowthNodeId=target.node_id;const unlocked=hasGrowthNode(target.node_id),available=growthNodeAvailable(target,character),affordable=growth.sp>=target.sp_cost;
+    const prerequisites=target.prerequisites.map(id=>nodes.find(item=>item.node_id===id)?.name||id);if(target.require_count)prerequisites.push(`指定节点中完成 ${target.require_count.count} 个`);
+    const preferences=target.node_id==="QY19"&&unlocked?`<div class="summon-preferences"><b>偏好召唤（最多2种）</b>${[...new Set([...(state?.growthConfig?.summons?.unlocked||[]),...compileGrowthConfig(character).summons.unlocked])].filter(id=>QINGYAN_SUMMON_CATALOG[id]?.kind==="mobile").map(id=>`<button data-preferred-summon="${id}" class="${growth.preferences.qingyan.includes(id)?"chosen":""}">${QINGYAN_SUMMON_CATALOG[id].icon} ${QINGYAN_SUMMON_CATALOG[id].name}</button>`).join("")}</div>`:"";
+    $("growthNodeDetail").innerHTML=`<div class="growth-detail-brush"><small>${nodeTypeLabel(target.node_type)} · ${target.branch}</small><h3>${target.name}</h3></div><div class="growth-detail-icon">${target.name.slice(0,1)}</div><div class="growth-detail-level"><span>修行状态</span><b>${unlocked?"已完成":"未修行"}</b></div><p>${target.description}</p>${prerequisites.length?`<small class="growth-detail-prereq">前置：${prerequisites.join("、")}</small>`:""}${preferences}<div class="growth-detail-cost">消耗修行点 <b>${target.sp_cost} SP</b></div><button class="growth-detail-unlock" data-detail-unlock="${target.node_id}" ${unlocked||!available||!affordable?"disabled":""}>${unlocked?"已修行":!available?"前置未完成":!affordable?"修行点不足":"修行此节点"}</button>`;
+    $("growthNodeDetail").querySelector("[data-detail-unlock]")?.addEventListener("click",()=>unlockGrowthNode(target.node_id));
+    $("growthNodeDetail").querySelectorAll("[data-preferred-summon]").forEach(button=>button.onclick=()=>togglePreferredSummon(button.dataset.preferredSummon));
+  }
+  function togglePreferredSummon(id){const list=growth.preferences.qingyan||=[];const index=list.indexOf(id);if(index>=0)list.splice(index,1);else{if(list.length>=2)list.shift();list.push(id);}saveGrowth();renderGrowthPanel("偏好召唤已更新；下一局随机权重翻倍。");}
   function renderGrowthPanel(message = "") {
     const character = CHARACTERS[growthCharacterKey] || CHARACTER, nodes = growthNodesFor(character);
-    $("growthCoins").textContent = profile.coins;
-    $("growthCharacterTabs").innerHTML = Object.values(CHARACTERS).map(item => `<button class="growth-tab ${item.key === character.key ? "active" : ""} ${item.palette}" data-growth-character="${item.key}"><span>${characterMark(item.key)}</span><b>${item.name}</b><small>${growthSpent(item)} / ${growthNodesFor(item).reduce((sum,node)=>sum+node.coin_cost,0)} 钱</small></button>`).join("");
-    $("growthCharacterTabs").querySelectorAll("[data-growth-character]").forEach(button => button.onclick = () => { growthCharacterKey = button.dataset.growthCharacter; renderGrowthPanel(); });
+    $("growthCoins").textContent = growth.sp;
+    $("growthCharacterTabs").innerHTML = Object.values(CHARACTERS).map(item => `<button class="growth-tab ${item.key === character.key ? "active" : ""} ${item.palette}" data-growth-character="${item.key}"><span class="growth-tab-art">${imageMarkup(portraitResource(item),item.name)}</span><b>${item.name}</b><small>${growthSpent(item)} SP</small></button>`).join("");
+    $("growthCharacterTabs").querySelectorAll("[data-growth-character]").forEach(button => button.onclick = () => { growthCharacterKey = button.dataset.growthCharacter; growthBranch="";selectedGrowthNodeId="";growthBranchOpen=false;renderGrowthPanel(); });
     const unlockedCount = nodes.filter(node => hasGrowthNode(node.node_id)).length, config = compileGrowthConfig(character);
-    $("growthSummary").innerHTML = `<div><b>${character.name}</b><span>${character.role}</span></div><div><strong>${unlockedCount}/${nodes.length}</strong><small>已解锁节点</small></div><div><strong>Tier ${config.vfx.weapon?.tier || config.vfx.summon?.tier || 1}</strong><small>技能树视觉下限</small></div><div><strong>${config.slots.weapon ? `武器 +${config.slots.weapon}` : config.slots.summon ? `召唤 +${config.slots.summon}` : config.slots.device ? `装置 +${config.slots.device}` : "机制成长"}</strong><small>当前树特性</small></div>`;
-    const tiers = [...new Set(nodes.map(node => node.tier))];
-    $("skillTree").innerHTML = tiers.map(tier => `<section class="skill-tier"><header><span>第 ${tier} 层</span><i></i></header><div class="skill-tier-nodes">${nodes.filter(node => node.tier === tier).map(node => {
-      const unlocked = hasGrowthNode(node.node_id), available = growthNodeAvailable(node, character), affordable = profile.coins >= node.coin_cost;
-      const prerequisiteNames = node.prerequisites.map(id => nodes.find(item => item.node_id === id)?.name || id).join("、");
-      const stateClass = unlocked ? "unlocked" : available ? affordable ? "available" : "unaffordable" : "locked";
-      const breakthrough = node.breakthrough_options ? `<div class="breakthrough-options">${node.breakthrough_options.map(option => `<button data-breakthrough="${option.id}" ${!unlocked ? "disabled" : ""} class="${growth.choices[character.id] === option.id ? "chosen" : ""}"><b>${option.name}</b><span>${option.description}</span></button>`).join("")}</div>` : "";
-      const challengeState = node.challenge_id ? `<em class="challenge-state">${growth.challenges[node.challenge_id] === "complete" ? "挑战已完成" : unlocked ? "挑战入口已开放" : "解锁后开放挑战"}</em>${unlocked && growth.challenges[node.challenge_id] !== "complete" ? `<button class="challenge-start" data-start-challenge="${node.challenge_id}">进入专属挑战</button>` : ""}` : "";
-      return `<article class="skill-node ${stateClass} type-${node.node_type.toLowerCase()}" data-node-id="${node.node_id}"><div class="node-seal">${node.node_id}</div><small>${nodeTypeLabel(node.node_type)}</small><h3>${node.name}</h3><p>${node.description}</p>${node.prerequisites.length ? `<span class="node-prereq">前置：${prerequisiteNames}</span>` : `<span class="node-prereq">自由起笔</span>`}${challengeState}<button class="node-unlock" data-unlock-node="${node.node_id}" ${unlocked || !available || !affordable ? "disabled" : ""}>${unlocked ? "已解锁" : available ? `解锁 · ${node.coin_cost} 钱` : node.node_type === "BREAKTHROUGH" ? "完成专属挑战后开放" : "前置未解锁"}</button>${breakthrough}</article>`;
-    }).join("")}</div></section>`).join("");
-    $("skillTree").querySelectorAll("[data-unlock-node]").forEach(button => button.onclick = () => unlockGrowthNode(button.dataset.unlockNode));
-    $("skillTree").querySelectorAll("[data-breakthrough]").forEach(button => button.onclick = () => chooseBreakthrough(button.dataset.breakthrough));
-    $("skillTree").querySelectorAll("[data-start-challenge]").forEach(button => button.onclick = () => startGrowthChallenge(button.dataset.startChallenge));
-    $("growthStatus").textContent = message || "选择可解锁的节点；基础、机制与视觉效果会在下一局自动生效。挑战节点本身不增加属性。";
+    const statValue=key=>{const effect=config.stats[key]||{add:0,mult:1};return((character.base_stats[key]||0)+effect.add)*effect.mult;};
+    $("growthSummary").innerHTML = `<div><b>${character.name}</b><span>${character.role}</span></div><div><strong>心 ${Math.round(statValue("maxHp"))}</strong><small>生命</small></div><div><strong>锋 ${statValue("attack").toFixed(1)}</strong><small>攻击</small></div><div><strong>盾 ${Math.round(statValue("armor")*100)}%</strong><small>防御</small></div><div><strong>暴 ${Math.round(statValue("crit")*100)}%</strong><small>暴击率</small></div><div><strong>${unlockedCount}/${nodes.length}</strong><small>已修行</small></div>`;
+    const branches=[...new Set(nodes.map(node=>node.branch))];if(!branches.includes(growthBranch))growthBranch=branches[0]||"";
+    $("growthBranches").innerHTML=branches.map(branch=>{const entries=nodes.filter(node=>node.branch===branch),done=entries.filter(node=>hasGrowthNode(node.node_id)).length;return`<button class="growth-branch-card" data-growth-branch="${branch}"><span>${branch.slice(0,1)}</span><div><b>${branch}</b><small>${done} / ${entries.length} 已修行</small></div><em>查看升级 ›</em></button>`;}).join("");
+    $("growthBranches").querySelectorAll("[data-growth-branch]").forEach(button=>button.onclick=()=>{growthBranch=button.dataset.growthBranch;selectedGrowthNodeId="";growthBranchOpen=true;renderGrowthPanel();});
+    const branchNodes=nodes.filter(node=>node.branch===growthBranch),tiers=[...new Set(branchNodes.map(node=>node.tier))].sort((a,b)=>a-b);
+    $("skillTree").innerHTML=tiers.map(tier=>`<section class="skill-tier"><header><span>${tier}层</span></header><div class="skill-tier-nodes">${branchNodes.filter(node=>node.tier===tier).map(node=>{const unlocked=hasGrowthNode(node.node_id),available=growthNodeAvailable(node,character),affordable=growth.sp>=node.sp_cost,stateClass=unlocked?"unlocked":available?(affordable?"available":"unaffordable"):"locked";return`<button class="skill-node ${stateClass} type-${node.node_type.toLowerCase()} ${node.node_id===selectedGrowthNodeId?"selected":""}" data-node-id="${node.node_id}" title="${node.description}"><span class="skill-node-icon">${node.name.slice(0,1)}</span><b>${node.name}</b><small>${unlocked?"✓ 已修行":available?`${node.sp_cost} SP`:"锁定"}</small></button>`;}).join("")}</div></section>`).join("");
+    $("skillTree").querySelectorAll("[data-node-id]").forEach(button=>button.onclick=()=>{selectedGrowthNodeId=button.dataset.nodeId;renderGrowthPanel();});
+    const selected=nodes.find(node=>node.node_id===selectedGrowthNodeId&&node.branch===growthBranch)||branchNodes[0];renderGrowthDetail(character,nodes,selected);
+    $("growthBranchKicker").textContent=`${character.name} · 技能修行`;$("growthBranchTitle").textContent=growthBranch||"升级路线";$("growthBranchWindow").classList.toggle("hidden",!growthBranchOpen);
+    $("growthStatus").textContent = message || "点击技能卡片进入升级窗口；终局流派节点互斥。";
   }
   function unlockGrowthNode(nodeId) {
     const character = CHARACTERS[growthCharacterKey] || CHARACTER, node = growthNodesFor(character).find(item => item.node_id === nodeId);
-    if (!node || hasGrowthNode(nodeId) || !growthNodeAvailable(node, character) || profile.coins < node.coin_cost) return;
-    profile.coins -= node.coin_cost; growth.unlocked[nodeId] = Date.now();
-    if (node.challenge_id && !growth.challenges[node.challenge_id]) growth.challenges[node.challenge_id] = "unlocked";
-    saveGrowth(); saveProfile(); renderGrowthPanel(`已解锁「${node.name}」；战斗效果将在下一局生效。`); sound("coin");
-  }
-  function chooseBreakthrough(optionId) {
-    const character = CHARACTERS[growthCharacterKey] || CHARACTER, node = growthNodesFor(character).find(item => item.breakthrough_options?.some(option => option.id === optionId));
-    if (!node || !hasGrowthNode(node.node_id)) return;
-    growth.choices[character.id] = optionId; saveGrowth(); renderGrowthPanel(`已选择最终突破「${node.breakthrough_options.find(option => option.id === optionId).name}」。可通过重置当前角色重新选择。`);
+    if (!node || hasGrowthNode(nodeId) || !growthNodeAvailable(node, character) || growth.sp < node.sp_cost) return;
+    growth.sp -= node.sp_cost; growth.unlocked[nodeId] = Date.now();saveGrowth();selectedGrowthNodeId=nodeId;renderGrowthPanel(`已修行「${node.name}」；效果将在下一局生效。`);sound("coin");
   }
   function resetGrowthTree() {
     const character = CHARACTERS[growthCharacterKey] || CHARACTER, unlocked = growthNodesFor(character).filter(node => hasGrowthNode(node.node_id));
-    if (!unlocked.length || !confirm(`重置 ${character.name} 的技能树并返还 ${unlocked.reduce((sum,node)=>sum+node.coin_cost,0)} 铜钱？已完成挑战会保留。`)) return;
-    profile.coins += unlocked.reduce((sum,node)=>sum+node.coin_cost,0); unlocked.forEach(node => delete growth.unlocked[node.node_id]); delete growth.choices[character.id]; saveGrowth(); saveProfile(); renderGrowthPanel("技能树已重置，投入铜钱已全部返还。");
-  }
-  function startGrowthChallenge(challengeId) {
-    const character = CHARACTERS[growthCharacterKey] || CHARACTER, node = growthNodesFor(character).find(item => item.challenge_id === challengeId);
-    if (!node || !hasGrowthNode(node.node_id)) return;
-    homeCharacterKey = character.key; pendingChallenge = challengeId; $("growthPanel").classList.add("hidden"); resetGame(false);
+    const refund=unlocked.reduce((sum,node)=>sum+node.sp_cost,0);if(!unlocked.length||!confirm(`重置 ${character.name} 的技能树并返还 ${refund} 修行点？`))return;
+    growth.sp+=refund;unlocked.forEach(node=>delete growth.unlocked[node.node_id]);if(character.key==="qingyan")growth.preferences.qingyan=["mouse","rabbit"];selectedGrowthNodeId="";saveGrowth();renderGrowthPanel("技能树已重置，修行点已全部返还。");
   }
   renderCharacterChoices(); renderHomeCharacter();
 
@@ -307,16 +379,18 @@
     return {
       x: WORLD_W / 2, y: WORLD_H / 2, r: 21, hp: base.maxHp, maxHp: base.maxHp, speed: base.speed, invuln: 0,
       level: 1, xp: 0, nextXp: levelXpRequirement(1), pickup: base.pickup, damageMul: base.damageMul,
-      attackSpeed: base.attackSpeed, crit: base.crit, size: base.size, armor: base.armor, base,
-      runtime: { damage: 1, speed: 1, attackSpeed: 1, crit: 0 }, weapons: { yarn: 1 }, passives: {}, passiveWeights: {}, devices: {}, summonLevels: {}, weaponMastery: {}, weaponMinor: {}, growthCards: {}, moving: false,
+      attack: base.attack || 10, attackSpeed: base.attackSpeed, crit: base.crit, critDamage: base.critDamage || 1.75, cooldownMul: base.cooldownMul || 1, size: base.size, armor: base.armor, base,
+      runtime: { damage: 1, speed: 1, attackSpeed: 1, crit: 0 }, weapons: {}, exclusiveLevel: 1, passives: {}, passiveWeights: {}, devices: {}, summonLevels: {}, weaponMastery: {}, weaponMinor: {}, growthCards: {}, moving: false,
       facing: 1, animation: createCharacterAnimation(character), movedDistance: 0, growthConfig
     };
   }
 
   function createCharacterState(character, growthConfig = compileGrowthConfig(character)) {
-    if (character.key === "chihen") return { type: "nine_lives", livesRemaining: character.mechanics.lives + growthConfig.revive.lives, revivesUsed: 0, shieldCharges: 0, bloodClaw: 1.1, fateDash: 3.2, afterfireUntil: 0, forcedCritUntil: 0, deathGuardUntil: 0, deathGuardReady: false, marks: { damage: 0, attackSpeed: 0, crit: 0 } };
-    if (character.key === "qingyan") return { type: "summoner_roster", energy: 0, energyMax: character.mechanics.companionEnergyMax || 100, empowerUntil: 0, deathLinkUntil: 0, recall: 7, ward: 4.5, wardUntil: 0, echoes: [], resonanceLineUntil: 0 };
-    return { type: "standard_build", stepEdgeCharged: false, switchStanceUntil: 0 };
+    const maxCharges={skill1:growthConfig.flags.dash_charges?.value||growthConfig.flags.bloodstep_charges?.value||1,skill2:1,skill3:1,ultimate:1};
+    const common = { exclusiveTimer: .2, exclusiveCount: 0, skillCooldowns: { skill1:0, skill2:0, skill3:0, ultimate:0 }, skillMaxCharges:maxCharges, skillCharges:{...maxCharges}, skillCastLock: 0, stepEdgeCharged: false, switchStanceUntil: 0 };
+    if (character.key === "chihen") return { ...common, type: "nine_lives", livesRemaining: character.mechanics.lives + growthConfig.revive.lives, revivesUsed: 0, shieldCharges: 0, afterfireUntil: 0, forcedCritUntil: 0, deathGuardUntil: 0, deathGuardReady: false, marks: { damage: 0, attackSpeed: 0, crit: 0 }, unyieldingUntil:0, unyieldingDamageStart:0, bloodPrisonUntil:0, bloodPrisonFinalized:true,lastLifeUntil:0,lastLifePending:false,bloodstepRefundAt:0 };
+    if (character.key === "qingyan") return { ...common, type: "summoner_roster", energy: 0, energyMax: character.mechanics.companionEnergyMax || 100, empowerUntil: 0, deathLinkUntil: 0, wardUntil: 0, echoes: [], resonanceLineUntil: 0, talismanCount:0, resonanceTimer:4, armyUntil:0, armyRainTimer:0,lastSummonType:null,doubleSummonLock:false,convertedTemporary:false };
+    return { ...common, type: "standard_build", inkEdgeUntil:0, inkEdgeFinalized:true,ultimateKills:0,ultimateBaseEnd:0,spearKillCounter:0,spearCharged:false };
   }
 
   function recalculatePlayerStats({ healDelta = false } = {}) {
@@ -329,12 +403,16 @@
     const weight = id => Number.isFinite(player.passiveWeights[id]) ? player.passiveWeights[id] : (player.passives[id] || 0);
     const oldMax = player.maxHp || player.base.maxHp;
     const oldHp = Number.isFinite(player.hp) ? player.hp : oldMax;
-    player.maxHp = Math.max(1, player.base.maxHp + 22 * weight("health"));
+    const kit = combatKitFor(state.character), level = Math.max(1, player.level || 1), hpGrowth = Math.pow(1 + (kit?.levelGrowth?.maxHp || 0), level - 1), attackGrowth = Math.pow(1 + (kit?.levelGrowth?.attack || 0), level - 1);
+    player.maxHp = Math.max(1, player.base.maxHp * hpGrowth + 22 * weight("health"));
+    player.attack = Math.max(1, (player.base.attack || 10) * attackGrowth);
     player.speed = Math.max(1, player.base.speed * Math.pow(1.10, weight("speed")) * player.runtime.speed);
     player.damageMul = Math.max(.01, player.base.damageMul * Math.pow(1.18, weight("power")) * player.runtime.damage);
     player.attackSpeed = Math.max(.05, player.base.attackSpeed * Math.pow(1.14, weight("haste")) * player.runtime.attackSpeed);
     player.pickup = Math.max(1, player.base.pickup + 38 * weight("magnet"));
     player.crit = clamp(player.base.crit + .08 * weight("crit") + player.runtime.crit, 0, 1);
+    player.critDamage = Math.max(1, player.base.critDamage || 1.75);
+    player.cooldownMul = Math.max(.25, player.base.cooldownMul || 1);
     player.size = Math.max(.1, player.base.size * Math.pow(1.15, weight("size")));
     player.armor = clamp(player.base.armor + .08 * weight("armor"), 0, .9);
     player.hp = clamp(oldHp + (healDelta ? Math.max(0, player.maxHp - oldMax) : 0), 0, player.maxHp);
@@ -374,6 +452,12 @@
     }
     updateDock();
   }
+  function setExclusiveLevel(level) {
+    const data = combatKitFor(state.character)?.exclusive, player = state.player;
+    if (!data || !player) return;
+    player.exclusiveLevel = clamp(Math.round(Number(level) || 1), 1, data.max || 7);
+    updateDock(); updateHud();
+  }
   function setSummonLevel(id, level) {
     const data = SUMMONS[id], player = state.player;
     if (!data || !player || state.character.key !== "qingyan") return;
@@ -385,20 +469,19 @@
     updateDock();
   }
 
-  function clearWorldNodes() { nodes.clear(); world.replaceChildren(); }
+  function clearWorldNodes() { nodes.clear(); if(sceneLayers)world.replaceChildren(sceneLayers);else world.replaceChildren(); }
   function resetGame(devOverride = null) {
     const queryDev = new URLSearchParams(location.search).get("dev") === "1";
     const dev = devOverride === null ? queryDev : Boolean(devOverride);
-    const activeCharacter = CHARACTERS[homeCharacterKey] || CHARACTER, growthConfig = compileGrowthConfig(activeCharacter), challengeId = dev ? null : pendingChallenge;
-    pendingChallenge = null;
+    const activeCharacter = CHARACTERS[homeCharacterKey] || CHARACTER, growthConfig = compileGrowthConfig(activeCharacter), challengeId = null;
     const baseSlots = activeCharacter.slot_rules || CHARACTER.slot_rules;
     state = {
-      dev, mode: dev ? "playing" : "upgrade", started: dev, duration: 480, time: 0, lastSpawn: 0,
+      dev, mode: dev ? "playing" : "upgrade", started: dev, duration: RUN_TIMELINE?.duration || 900, time: 0, lastSpawn: 0,
       shake: 0, flash: 0, kills: 0, elites: 0, damage: 0, taken: 0, highHit: 0, coins: 0,
       pendingLevels: 0, rerolls: 2, bossSpawned: false, won: false, simSpeed: 1, devLabOpen: false,
       devRunPaused: dev, invincible: false, infiniteRerolls: false, fps: 0, damageBuckets: [],
-      schedules: { chest1: false, chest2: false, merchant: false, event: false, elite1: false, elite2: false },
-      character: activeCharacter, challengeId, growthConfig, slotRules: { ...baseSlots, weapon: challengeId === "balanced_single_weapon" ? 1 : baseSlots.weapon + (growthConfig.slots.weapon || 0), device: baseSlots.device + (growthConfig.slots.device || 0), summon: challengeId === "summoner_no_summon" ? 0 : baseSlots.summon + (growthConfig.slots.summon || 0) }, characterState: createCharacterState(activeCharacter, growthConfig), player: createPlayer(activeCharacter, dev, growthConfig), summons: [], enemies: [], projectiles: [], enemyShots: [], pickups: [], particles: [], texts: [], hazards: [], devices: [], boss: null,
+      schedules: Object.fromEntries((RUN_TIMELINE?.events || []).map(event => [event.id,false])),
+      character: activeCharacter, challengeId, growthConfig, slotRules: { ...baseSlots, weapon: baseSlots.weapon + (growthConfig.slots.weapon || 0), device: baseSlots.device + (growthConfig.slots.device || 0), summon: baseSlots.summon + (growthConfig.slots.summon || 0) }, characterState: createCharacterState(activeCharacter, growthConfig), player: createPlayer(activeCharacter, dev, growthConfig), summons: [], inkSpirits: [], delayedEffects: [], enemies: [], projectiles: [], enemyShots: [], pickups: [], particles: [], texts: [], hazards: [], devices: [], boss: null,
       playerZones: [], weaponPulses: [], orbiters: [], weaponDamage: {},
       timers: { ...Object.fromEntries(Object.keys(WEAPONS).map(id => [id, 0])), trap: 2, turret: 0 }, cam: { x: WORLD_W / 2, y: WORLD_H / 2 }
     };
@@ -407,7 +490,7 @@
     $("hudHeroName").textContent = state.character.name; setArtImage($("hudHeroImage"), portraitResource(state.character), state.character.name);
     ui.menu.classList.add("hidden"); ui.result.classList.add("hidden"); ui.hud.classList.remove("hidden"); ui.joystick.classList.remove("hidden"); ui.bossHud.classList.add("hidden");
     updateDock(); updateHud();
-    toast(dev ? "DEV MODE · 测试数据不会写入正式存档" : challengeId ? `专属挑战 · ${challengeId === "balanced_single_weapon" ? "单武器通关" : challengeId === "ninelives_last_life" ? "最终命通关" : "无召唤通关"}` : "开局墨意 · 先选一道笔势", 2200);
+    toast(dev ? "DEV MODE · 测试数据不会写入正式存档" : "开局墨意 · 先选一道笔势", 2200);
     if (dev) window.dispatchEvent(new CustomEvent("meow-dev-started")); else openUpgrade(true);
   }
 
@@ -426,30 +509,30 @@
   function initializeCharacterRun() {
     state.characterState = createCharacterState(state.character, state.growthConfig);
     state.summons = [];
+    state.inkSpirits = [];
+    state.delayedEffects = [];
     if (state.character.key === "qingyan") {
-      if (state.challengeId !== "summoner_no_summon") {
-        // Keep the playable Demo's established three-partner opening. S04 still
-        // guarantees the starter mouse for challenge/loadout variants.
-        ["mouse","crane","dog"].forEach(id => state.player.summonLevels[id] = Math.max(state.player.summonLevels[id] || 0, 1));
-        state.growthConfig.startSummons.forEach(entry => state.player.summonLevels[entry.id] = Math.max(state.player.summonLevels[entry.id] || 0, entry.level));
-      }
+      // 画灵符通过万灵图录持续随机召唤；旧三伙伴仍作为兼容升级项保留。
+      state.growthConfig.startSummons.forEach(entry => state.player.summonLevels[entry.id] = Math.max(state.player.summonLevels[entry.id] || 0, entry.level));
       syncSummonRoster();
     }
+    renderSkillBar();
   }
   function summonPower(summon) {
     const cs = state.characterState, empowered = cs.empowerUntil > state.time, linked = cs.deathLinkUntil > state.time, commanded = summon.buffUntil > state.time, warded = cs.wardUntil > state.time;
     const alive = state.summons.filter(item => !item.dead), roles = new Set(alive.flatMap(item => SUMMONS[item.type].role)), unity = state.growthConfig.flags.alive_summon_thresholds && alive.length >= 3 ? 1.10 : 1, formation = state.growthConfig.flags.summon_role_set_bonus && ["output","tank","support","control"].every(role => roles.has(role)) ? 1.15 : 1;
-    return state.growthConfig.summons.damage * (1 + (summon.level - 1) * .18) * (empowered ? 1.55 : 1) * (linked ? 1.3 : 1) * (commanded ? 1.25 : 1) * (warded ? 1.18 : 1) * unity * formation;
+    const resonance = 1 + Math.min(6, state.summons.filter(item=>!item.dead).length + livingInkSpirits().length) * .06;
+    return state.growthConfig.summons.damage * (1 + (summon.level - 1) * .18) * (empowered ? 1.55 : 1) * (linked ? 1.3 : 1) * (commanded ? 1.25 : 1) * (warded ? 1.18 : 1) * unity * formation * resonance;
   }
   function onSummonKill() {
     const cs = state.characterState;
     if (state.character.key !== "qingyan" || cs.empowerUntil > state.time) return;
-    const extra = state.growthConfig.breakthrough === "BREAK_SUM_A" ? 1 + state.summons.filter(item => !item.dead).length * .05 : 1;
     const gatherCard = 1 + .15 * (state.player.growthCards.CARD_SUM_GATHER || 0);
-    cs.energy = Math.min(cs.energyMax, cs.energy + 14 * state.growthConfig.summons.energy * extra * gatherCard);
+    cs.energy = Math.min(cs.energyMax, cs.energy + 14 * state.growthConfig.summons.energy * gatherCard);
     if (cs.energy < cs.energyMax) return;
     cs.energy = 0; cs.empowerUntil = state.time + (state.character.mechanics.empowerDuration || 6);
     state.summons.forEach(summon => { if (!summon.dead) summon.hp = Math.min(summon.maxHp, summon.hp + summon.maxHp * .25); });
+    livingInkSpirits().forEach(spirit=>{spirit.hp=Math.min(spirit.maxHp,spirit.hp+spirit.maxHp*.25);spirit.buffUntil=state.time+(state.character.mechanics.empowerDuration||6);});
     if (state.growthConfig.flags.resonance_line) { cs.resonanceLineUntil = state.time + .75; state.summons.filter(summon => !summon.dead).forEach(summon => beam(state.player.x, state.player.y, summon.x, summon.y, "#d6b66b", "FX_003", null, 2)); }
     burst(state.player.x, state.player.y, "#d6b66b", 14, 80, "FX_003"); toast("伙伴能量满盈 · 全阵共鸣！", 2200);
   }
@@ -473,11 +556,8 @@
     state.summons.forEach(summon => { if (!summon.dead) { summon.hp = Math.min(summon.maxHp, summon.hp + summon.maxHp * .42); summon.buffUntil = state.time + 4; } });
     burst(state.player.x, state.player.y, "#607a9b", 12, 75, "FX_003"); toast(dead ? `回墨号令 · ${dead.name}重归阵中` : "回墨号令 · 伙伴疗愈强化", 1800);
   }
-  function updateQingyan(dt) {
+  function updateLegacySummons(dt) {
     const cs = state.characterState, player = state.player, alive = state.summons.filter(summon => !summon.dead);
-    cs.recall -= dt; cs.ward -= dt;
-    if (cs.recall <= 0) { useQingyanRecall(); cs.recall = state.character.skills.recall.cooldown; }
-    if (cs.ward <= 0) { cs.wardUntil = state.time + state.character.skills.ward.duration; cs.ward = state.character.skills.ward.cooldown; state.particles.push({ kind: "claw", fxId: "FX_004", x: player.x, y: player.y, r: 145, color: "#596f91", life: .8, max: .8 }); toast("砚光护阵 · 伙伴攻势提升", 1600); }
     state.summons.forEach((summon, index) => {
       if (summon.dead) { if (state.time >= summon.reviveAt) reviveSummon(summon); return; }
       summon.attack -= dt;
@@ -508,28 +588,197 @@
     }
     cs.echoes = cs.echoes.filter(echo => echo.life > 0);
   }
-  function updateChihen(dt) {
-    const cs = state.characterState, player = state.player, skills = state.character.skills;
-    cs.bloodClaw -= dt; cs.fateDash -= dt;
-    if (cs.bloodClaw <= 0 && nearest(player.x, player.y, 230)) {
-      damageArea({ x: player.x, y: player.y, r: skills.bloodClaw.radius * player.size, damage: skills.bloodClaw.damage * player.damageMul, kind: "chihen-claw", source: { type: "character", id: "chihen" } });
-      state.particles.push({ kind: "claw", fxId: "FX_007", x: player.x, y: player.y, r: skills.bloodClaw.radius * player.size, color: "#b8422f", life: .42, max: .42 }); cs.bloodClaw = skills.bloodClaw.cooldown / player.attackSpeed;
+  function skillDirection(preferCrowd = false) {
+    const player = state.player;
+    if (preferCrowd) {
+      const targets = [];
+      forEachEnemy(enemy => targets.push(enemy));
+      targets.sort((a,b) => dist(player,a) - dist(player,b));
+      const sample = targets.slice(0, 12);
+      if (sample.length) {
+        const vector = sample.reduce((sum, enemy) => ({ x:sum.x + (enemy.x-player.x) / Math.max(1,dist(player,enemy)), y:sum.y + (enemy.y-player.y) / Math.max(1,dist(player,enemy)) }), {x:0,y:0});
+        const length = Math.hypot(vector.x, vector.y) || 1; return { x:vector.x/length, y:vector.y/length };
+      }
     }
-    const target = nearest(player.x, player.y, 560);
-    if (cs.fateDash <= 0 && target) {
-      const startX = player.x, startY = player.y, angle = Math.atan2(target.y - player.y, target.x - player.x), travel = Math.min(skills.fateDash.range, Math.max(60, dist(player, target) - 35));
-      player.x = clamp(player.x + Math.cos(angle) * travel, 60, WORLD_W - 60); player.y = clamp(player.y + Math.sin(angle) * travel, 60, WORLD_H - 60); player.facing = Math.cos(angle) < 0 ? -1 : 1; player.invuln = Math.max(player.invuln, .24);
-      beam(startX, startY, player.x, player.y, "#b8422f", "FX_007"); damageArea({ x: player.x, y: player.y, r: 92 * player.size, damage: skills.fateDash.damage * player.damageMul, kind: "chihen-dash", source: { type: "character", id: "chihen" }, knockback: 42 });
-      cs.fateDash = skills.fateDash.cooldown / player.attackSpeed;
+    let x = joy.x, y = joy.y;
+    if (keys.has("KeyA") || keys.has("ArrowLeft")) x--; if (keys.has("KeyD") || keys.has("ArrowRight")) x++;
+    if (keys.has("KeyW") || keys.has("ArrowUp")) y--; if (keys.has("KeyS") || keys.has("ArrowDown")) y++;
+    if (Math.hypot(x,y) < .05) {
+      const direction = player.animation?.direction || (player.facing < 0 ? "left" : "right");
+      return direction === "up" ? {x:0,y:-1} : direction === "down" ? {x:0,y:1} : direction === "left" ? {x:-1,y:0} : {x:1,y:0};
     }
+    const length = Math.hypot(x,y); return {x:x/length,y:y/length};
+  }
+  function damageLine({ x, y, dx, dy, length, width, damage, kind, source, eliteMultiplier = 1, knockback = 0, hitCounts = null, maxHits = Infinity, rising = null }) {
+    let hits = 0, kills = 0; const mag = Math.hypot(dx,dy) || 1, ux=dx/mag, uy=dy/mag;
+    forEachEnemy(enemy => {
+      const rx=enemy.x-x, ry=enemy.y-y, along=rx*ux+ry*uy, side=Math.abs(rx*uy-ry*ux);
+      if (along < -enemy.r || along > length+enemy.r || side > width/2+enemy.r || hitCounts && (hitCounts.get(enemy)||0)>=maxHits) return;
+      if(hitCounts)hitCounts.set(enemy,(hitCounts.get(enemy)||0)+1);
+      const wasAlive=!enemy.dead, scaled=damage*(1+(rising?.bonus||0))*(enemy.elite || enemy===state.boss ? eliteMultiplier : 1); hitEnemy(enemy,scaled,kind,null,source); hits++;
+      if (wasAlive && enemy.dead) { kills++;if(rising)rising.bonus=Math.min(rising.max,rising.bonus+rising.perKill); }
+      if (knockback && enemy!==state.boss) pushFrom(enemy,{x:x-ux*20,y:y-uy*20},knockback*(enemy.elite?.4:1));
+    });
+    beam(x,y,x+ux*length,y+uy*length,kind.includes("chihen")?"#b8422f":"#4f928f",kind.includes("chihen")?"FX_007":"FX_001",null,3);
+    return {hits,kills};
+  }
+  function damageCone({ x, y, angle, range, arc, damages, kind, source }) {
+    let hits=0,kills=0;
+    forEachEnemy(enemy=>{ const a=Math.atan2(enemy.y-y,enemy.x-x), delta=Math.atan2(Math.sin(a-angle),Math.cos(a-angle)); if(dist({x,y},enemy)>range+enemy.r||Math.abs(delta)>arc/2)return; const before=!enemy.dead; for(const damage of damages)if(!enemy.dead)hitEnemy(enemy,damage,kind,null,source); hits++;if(before&&enemy.dead)kills++; });
+    state.particles.push({kind:"claw",fxId:"FX_007",x,y,r:range,color:"#b8422f",life:.34,max:.34,visualKind:"scarlet"}); return {hits,kills};
+  }
+  function addTrail(x1,y1,x2,y2,{life=3,tick=.5,damage=0,slow=0,kind="skill-trail",color="#4f928f"}={}) {
+    const distance=Math.hypot(x2-x1,y2-y1),steps=Math.max(2,Math.ceil(distance/52));
+    for(let index=0;index<=steps;index++){const t=index/steps;state.playerZones.push({kind,fxId:"FX_005",vfxTier:2,x:lerp(x1,x2,t),y:lerp(y1,y2,t),r:44,life,duration:life,tick,nextTick:0,damage,slow,source:{type:"character",id:state.character.key},color});}
+  }
+  function dashPlayer(distance) {
+    const player=state.player,direction=skillDirection(false),start={x:player.x,y:player.y};
+    player.x=clamp(player.x+direction.x*distance,60,WORLD_W-60);player.y=clamp(player.y+direction.y*distance,60,WORLD_H-60);player.facing=direction.x<0?-1:direction.x>0?1:player.facing;player.animation.direction=resolveMoveDirection(direction.x,direction.y,player.animation.direction);
+    return {...start,endX:player.x,endY:player.y,direction};
+  }
+  function livingInkSpirits(kind=null){return(state.inkSpirits||[]).filter(spirit=>!spirit.dead&&(!kind||spirit.kind===kind));}
+  function inkSpiritCap(){return Math.min(state.character.slot_rules.summonMax||6,state.slotRules.summon||3);}
+  function qingyanPool(kind="mobile"){return(state.growthConfig.summons.unlocked||[]).filter(id=>QINGYAN_SUMMON_CATALOG[id]?.kind===kind);}
+  function weightedSummonType(kind="mobile"){
+    const pool=qingyanPool(kind);if(!pool.length)return null;const preferences=state.growthConfig.preferences||[],last=state.characterState.lastSummonType;
+    const weighted=pool.map(id=>{let weight=preferences.includes(id)&&state.growthConfig.flags.preferred_summons?2:1;const same=livingInkSpirits(kind).filter(spirit=>spirit.catalogId===id).length;if(same>=2)weight*=.5;if(id===last&&state.growthConfig.flags.summon_variety)weight*=.5;return{id,weight};});
+    let roll=Math.random()*weighted.reduce((sum,item)=>sum+item.weight,0);for(const item of weighted){roll-=item.weight;if(roll<=0)return item.id;}return weighted.at(-1).id;
+  }
+  function strengthenSpirit(spirit,amount=1){
+    if(!spirit)return null;const starCap=state.growthConfig.summons.starCap||1;
+    for(let i=0;i<amount;i++){if(spirit.star<starCap){spirit.star++;const factor=spirit.star===2?1.2:1.35;spirit.maxHp*=factor;spirit.hp=spirit.maxHp;textPop(spirit.x,spirit.y-30,`${spirit.star}星` ,"#d6b66b",16);}else{spirit.hp=Math.min(spirit.maxHp,spirit.hp+spirit.maxHp*.4);spirit.buffUntil=state.time+5;}}
+    burst(spirit.x,spirit.y,"#d6b66b",9,55,"FX_003");return spirit;
+  }
+  function addInkSpirit({temporary=false,big=false,duration=0,type=null,forceKind=null}={}){
+    const kind=forceKind||(big?"mobile":state.growthConfig.flags.device_pool&&Math.random()<state.growthConfig.flags.device_pool.chance?"fixed":"mobile"),catalogId=type||weightedSummonType(kind);if(!catalogId)return null;const data=QINGYAN_SUMMON_CATALOG[catalogId];
+    const current=livingInkSpirits(kind);if(!temporary&&((kind==="mobile"&&current.length>=inkSpiritCap())||(kind==="fixed"&&current.length>=1))){if(!state.growthConfig.flags.full_roster_upgrade)return null;const same=current.filter(item=>item.catalogId===catalogId);return strengthenSpirit(pick(same.length?same:current));}
+    const index=state.inkSpirits.length,angle=index*2.4,star=big?Math.max(2,state.growthConfig.summons.starCap):1,maxHp=data.kind==="fixed"?9999:state.player.maxHp*(data.hp||1)*state.growthConfig.summons.hp*(big?1.5:1);
+    const spirit={type:"ink-spirit",catalogId,kind:data.kind,name:big?`高阶·${data.name}`:data.name,icon:data.icon,role:data.role,art:data.art||SUMMONS.mouse.art,fallback_art:data.fallback_art||SUMMONS.mouse.fallback_art,x:state.player.x+Math.cos(angle)*(data.kind==="fixed"?115:70),y:state.player.y+Math.sin(angle)*(data.kind==="fixed"?115:70),r:data.kind==="fixed"?Math.min(28,(data.radius||110)*.18):big?25:18,maxHp,hp:maxHp,attack:rand(.05,.25),special:rand(.5,1.2),attackCount:0,kills:0,temporary,big,star,expiresAt:(duration||data.duration)?state.time+(duration||data.duration):0,buffUntil:0,dead:false};
+    state.inkSpirits.push(spirit);state.characterState.lastSummonType=catalogId;burst(spirit.x,spirit.y,big?"#d6b66b":"#536b87",big?12:7,big?70:40,"FX_003");
+    if(!temporary&&state.growthConfig.flags.double_summon&&!state.characterState.doubleSummonLock&&Math.random()<state.growthConfig.flags.double_summon.chance){state.characterState.doubleSummonLock=true;addInkSpirit({forceKind:kind});state.characterState.doubleSummonLock=false;}
+    return spirit;
+  }
+  function inkSpiritStats(spirit){
+    const data=QINGYAN_SUMMON_CATALOG[spirit.catalogId]||{damage:1,cooldown:.8},count=Math.min(6,livingInkSpirits().length),resonance=1+count*(state.growthConfig.flags.resonance_damage?.value||.06),starPower=spirit.star===3?1.55:spirit.star===2?1.2:1;
+    let cooldown=(spirit.big?.65:data.cooldown||.8),power=resonance*starPower*(spirit.big?1.35:1);const bonded=state.growthConfig.flags.summon_bond&&spirit.star>=3&&livingInkSpirits(spirit.kind).filter(item=>item.catalogId===spirit.catalogId&&item.star>=3).length>=2;if(bonded){power*=1.25;cooldown/=1.15;}
+    cooldown/=1+(state.growthConfig.flags.summon_haste?.value||0);if(count>=4)cooldown/=1+(state.growthConfig.flags.summon_count_haste?.value||0);if(spirit.buffUntil>state.time)cooldown/=1.5;
+    if(state.characterState.armyUntil>state.time){cooldown/=1.6;power*=1.4;}
+    const array=state.playerZones.find(zone=>zone.kind==="qingyan-array"&&zone.life>0&&dist(zone,spirit)<zone.r);if(array){cooldown/=1.35;power*=1.25;}
+    const inkstone=livingInkSpirits("fixed").find(item=>item.catalogId==="inkstone"&&dist(item,spirit)<QINGYAN_SUMMON_CATALOG.inkstone.radius);if(inkstone){cooldown/=1.15;power*=inkstone.star>=3?1.3:1.2;}
+    return{damage:state.player.attack*(data.damage||1)*power*state.growthConfig.summons.damage,cooldown};
+  }
+  function summonStrike(spirit,target,stats){
+    const data=QINGYAN_SUMMON_CATALOG[spirit.catalogId],source=spirit,color=spirit.big?"#d6b66b":"#536b87";spirit.attackCount++;
+    if(spirit.catalogId==="dog"){if(dist(spirit,target)<190)hitEnemy(target,stats.damage,"summon-dog",null,source);else shoot(spirit.x,spirit.y,target,{kind:"summon-dog",color,damage:stats.damage,speed:430,range:240,r:7,fxId:"FX_003",source,scaleWithPlayer:false});}
+    else if(spirit.catalogId==="scroll"){const count=spirit.star>=3?5:3,aim=Math.atan2(target.y-spirit.y,target.x-spirit.x);for(let i=0;i<count;i++)shootAngle(spirit.x,spirit.y,aim+spreadAngle(i,count,26),{kind:"summon-scroll",color,damage:stats.damage,speed:500,range:560,r:5,fxId:"FX_003",source,scaleWithPlayer:false});if(spirit.attackCount%4===0)damageArea({x:target.x,y:target.y,r:90,damage:state.player.attack*1.3*stats.damage/(state.player.attack*(data.damage||1)),kind:"summon-scroll-burst",source});}
+    else if(spirit.catalogId==="cranes"){const count=spirit.star>=3?8:6,aim=Math.atan2(target.y-spirit.y,target.x-spirit.x);for(let i=0;i<count;i++)shootAngle(spirit.x,spirit.y,aim+spreadAngle(i,count,34),{kind:"summon-crane",color,damage:stats.damage,speed:560,range:600,r:4,pierce:1,retention:.8,fxId:"FX_003",source,scaleWithPlayer:false});}
+    else{shoot(spirit.x,spirit.y,target,{kind:`summon-${spirit.catalogId}`,color,damage:stats.damage,speed:520,range:data.range||560,r:spirit.big?8:5,bounces:spirit.catalogId==="thunder"&&spirit.attackCount%3===0?(spirit.star>=3?6:4):0,retention:.82,fxId:"FX_003",source,scaleWithPlayer:false,vfxTier:spirit.star});}
+    if(spirit.catalogId==="mouse"&&state.time>=spirit.special){const hits=spirit.star>=3?2:1;for(let i=0;i<hits;i++)hitEnemy(target,state.player.attack*1.8*state.growthConfig.summons.damage,"summon-mouse-dash",null,source);spirit.special=state.time+4;beam(spirit.x,spirit.y,target.x,target.y,color,"FX_003",null,2);}
+    if(spirit.catalogId==="cat"&&state.time>=spirit.special){spirit.x=clamp(target.x-35,35,WORLD_W-35);spirit.y=clamp(target.y+25,35,WORLD_H-35);hitEnemy(target,state.player.attack*2.2*(target.elite||target===state.boss?1.2:1)*state.growthConfig.summons.damage,"summon-cat-backstab",null,source);if(spirit.star>=3)hitEnemy(target,stats.damage,"summon-cat-follow",null,source);spirit.special=state.time+3.5;}
+  }
+  function updateInkSpirits(dt){
+    if(state.character.key!=="qingyan")return;const player=state.player,cs=state.characterState,alive=livingInkSpirits(),mobile=livingInkSpirits("mobile");
+    state.inkSpirits.forEach((spirit,index)=>{if(spirit.dead)return;if(spirit.expiresAt&&state.time>=spirit.expiresAt){spirit.dead=true;burst(spirit.x,spirit.y,"#38465d",8,46,"FX_005");return;}spirit.attack-=dt;spirit.special-=spirit.special<state.time-30?0:0;
+      const data=QINGYAN_SUMMON_CATALOG[spirit.catalogId]||{},target=nearest(spirit.x,spirit.y,data.range||560);
+      if(spirit.kind==="mobile"){const formationAngle=state.time*.35+index*TAU/Math.max(1,mobile.length),pursue=["dog","cat","mouse"].includes(spirit.catalogId)&&target,goalX=pursue?target.x:player.x+Math.cos(formationAngle)*(spirit.big?130:92),goalY=pursue?target.y:player.y+Math.sin(formationAngle)*(spirit.big?130:92),angle=Math.atan2(goalY-spirit.y,goalX-spirit.x),distance=Math.hypot(goalX-spirit.x,goalY-spirit.y);spirit.x=clamp(spirit.x+Math.cos(angle)*Math.min(distance,(data.speed||220)*dt),35,WORLD_W-35);spirit.y=clamp(spirit.y+Math.sin(angle)*Math.min(distance,(data.speed||220)*dt),35,WORLD_H-35);}
+      if(spirit.kind==="fixed"&&spirit.attack<=0){if(spirit.catalogId==="blade")damageArea({x:spirit.x,y:spirit.y,r:data.radius*(spirit.star>=3?1.3:1),damage:state.player.attack*data.damage*state.growthConfig.summons.damage,kind:"summon-blade-device",source:spirit});if(spirit.catalogId==="umbrella"){forEachEnemy(enemy=>{if(dist(spirit,enemy)<data.radius+enemy.r){hitEnemy(enemy,state.player.attack*data.damage*state.growthConfig.summons.damage,"summon-umbrella",null,spirit);enemy._slowUntil=state.time+1;enemy._slowAmount=.35;pushFrom(enemy,spirit,24);if(spirit.star>=3)enemy.stunUntil=state.time+1;}});state.particles.push({kind:"claw",fxId:"FX_004",x:spirit.x,y:spirit.y,r:data.radius,color:"#536b87",life:.5,max:.5});}spirit.attack=data.cooldown;}
+      if(spirit.kind==="mobile"&&target&&spirit.attack<=0){const stats=inkSpiritStats(spirit);summonStrike(spirit,target,stats);spirit.attack=stats.cooldown;}
+      if(spirit.catalogId==="rabbit"&&state.time>=spirit.special){player.hp=Math.min(player.maxHp,player.hp+player.maxHp*.06*(spirit.star>=3?1.5:1));alive.forEach(item=>item.hp=Math.min(item.maxHp,item.hp+item.maxHp*.06*(spirit.star>=3?1.5:1)));spirit.special=state.time+5;burst(spirit.x,spirit.y,"#8aa79e",8,55,"FX_003");}
+      if(spirit.catalogId==="guardian"&&state.time>=spirit.special){cs.wardUntil=Math.max(cs.wardUntil,state.time+2);spirit.special=state.time+6;burst(player.x,player.y,"#d6b66b",8,62,"FX_003");}
+      if(spirit.catalogId==="bell"&&state.time>=spirit.special){forEachEnemy(enemy=>{if(dist(spirit,enemy)<180+enemy.r){enemy._slowUntil=state.time+2;enemy._slowAmount=enemy===state.boss?.2:.4;if(!enemy.elite&&enemy!==state.boss)enemy.stunUntil=state.time+(spirit.star>=3?1.2:.8);}});spirit.special=state.time+5;}
+      if(spirit.kind==="mobile")for(const enemy of state.enemies)if(!enemy.dead&&dist(spirit,enemy)<spirit.r+enemy.r){enemy._spiritContact||={};const key=objectId(spirit,"ink-spirit");if((enemy._spiritContact[key]||0)<=state.time){enemy._spiritContact[key]=state.time+.8;spirit.hp-=enemy.damage*(spirit.catalogId==="dog"?.4:.7);if(spirit.hp<=0){spirit.dead=true;cs.deathLinkUntil=state.time+3;burst(spirit.x,spirit.y,"#38465d",9,50,"FX_005");}}}
+    });
+    state.inkSpirits=state.inkSpirits.filter(spirit=>!spirit.dead);
+    if(state.growthConfig.flags.roster_resonance&&alive.length>=state.growthConfig.flags.roster_resonance.count){cs.resonanceTimer-=dt;if(cs.resonanceTimer<=0){damageArea({x:player.x,y:player.y,r:300,damage:skillPower(state.growthConfig.flags.roster_resonance.damage),kind:"qingyan-resonance",source:{type:"ink-spirit"}});state.particles.push({kind:"claw",fxId:"FX_004",x:player.x,y:player.y,r:300,color:"#536b87",life:.5,max:.5});cs.resonanceTimer=state.growthConfig.flags.roster_resonance.cooldown;}}
+  }
+  function updateExclusiveWeapon(dt){
+    const player=state.player,cs=state.characterState,level=player.exclusiveLevel||1;cs.exclusiveTimer-=dt;if(cs.exclusiveTimer>0)return;
+    const target=nearest(player.x,player.y,720);if(!target){cs.exclusiveTimer=.15;return;}cs.exclusiveCount++;
+    if(state.character.key==="moxiaobai"){
+      const flags=state.growthConfig.flags,interval=(level>=6?.58:level>=4?.68:.85),damage=player.attack*(level>=6?1.55:level>=3?1.35:level>=2?1.25:1.10),pierce=(level>=4?4:level>=2?3:2)+(flags.spear_pierce?.value||0),aim=Math.atan2(target.y-player.y,target.x-player.x),grandEvery=flags.spear_grand?.every||4,ultimate=(level>=7||flags.spear_grand)&&cs.exclusiveCount%grandEvery===0,ultBuff=cs.inkEdgeUntil>state.time,charged=ultimate&&cs.spearCharged;
+      shootAngle(player.x,player.y,aim,{kind:ultimate?"xiaobai-grand-spear":"xiaobai-spear",color:"#2d8078",damage:ultimate?player.attack*(flags.spear_grand?.damage||2.8)*(charged?1.8:1):damage,speed:720,range:ultimate?980:720,r:ultimate?(charged?27:18):8,pierce:ultimate||ultBuff?999:pierce,explodeRadius:!ultimate&&(level>=5||flags.spear_ink_burst)?(flags.spear_ink_burst?.radius||70):0,childBlasts:0,weaponId:"exclusive-moxiaobai",fxId:"FX_001",source:{type:"character",id:"xiaobai-exclusive"},vfxTier:ultimate?3:level>=4?2:1});
+      if(charged){cs.spearCharged=false;cs.spearKillCounter=0;}
+      const doubleEdge=flags.spear_double_edge&&cs.exclusiveCount%flags.spear_double_edge.every===0;if((level>=3||doubleEdge)&&!ultimate)shootAngle(player.x,player.y,aim+(cs.exclusiveCount%2?-.1:.1),{kind:"xiaobai-ink-blade",color:"#6ca9a1",damage:player.attack*(doubleEdge?flags.spear_double_edge.damage:level>=6?.75:.55),speed:650,range:620,r:5,pierce:2,weaponId:"exclusive-moxiaobai",fxId:"FX_001",source:{type:"character",id:"xiaobai-exclusive"},vfxTier:2});
+      if(ultimate&&(level>=7||flags.spear_trail)){const trail=flags.spear_trail||{duration:2,tick:.4,damage:.35};addTrail(player.x,player.y,player.x+Math.cos(aim)*900,player.y+Math.sin(aim)*900,{life:trail.duration,tick:trail.tick,damage:player.attack*trail.damage,slow:0,kind:"xiaobai-grand-trail"});}
+      if(ultBuff)for(const offset of[-.24,.24])shootAngle(player.x,player.y,aim+offset,{kind:"xiaobai-side-spear",color:"#89bdb5",damage:player.attack*(flags.xiaobai_ultimate?.sideDamage||.9),speed:700,range:760,r:7,pierce:999,weaponId:"exclusive-moxiaobai",fxId:"FX_001",source:{type:"character",id:"xiaobai-exclusive"},vfxTier:3});
+      cs.exclusiveTimer=interval/(player.attackSpeed*growthAttackSpeedMultiplier());
+    }else if(state.character.key==="chihen"){
+      const flags=state.growthConfig.flags,interval=level>=4?.58:.75,angle=Math.atan2(target.y-player.y,target.x-player.x),range=(level>=2?150:130)*(player.hp/player.maxHp<.2&&flags.critical_range?1+flags.critical_range.value:1),source={type:"character",id:"chihen-exclusive"};let damages=level>=6?[player.attack*1.5,player.attack*1.3]:level>=3||flags.blade_double?[player.attack*1.2,player.attack]:[player.attack*(level>=2?1.4:1.25)];
+      if((level>=7||flags.scarlet_combo)&&cs.exclusiveCount%5===0){damages=[player.attack*1.6,player.attack*1.8,player.attack*2.4];if(level>=7||flags.combo_burst)state.delayedEffects.push({delay:.18,run:()=>{damageArea({x:player.x+Math.cos(angle)*80,y:player.y+Math.sin(angle)*80,r:120,damage:player.attack*(flags.combo_burst?.damage||1.5),kind:"chihen-blood-burst",source});burst(player.x+Math.cos(angle)*80,player.y+Math.sin(angle)*80,"#b8422f",14,75,"FX_007");}});}
+      damageCone({x:player.x,y:player.y,angle,range,arc:1.65,damages,kind:"chihen-exclusive",source});
+      if(cs.bloodPrisonUntil>state.time)shootAngle(player.x,player.y,angle,{kind:"chihen-blood-blade",color:"#b8422f",damage:player.attack,speed:640,range:580,r:7,pierce:2,explodeRadius:flags.blood_prison_aoe?72:0,childBlasts:0,fxId:"FX_007",source});
+      cs.exclusiveTimer=interval/((1+(flags.blade_haste?.value||0))*player.attackSpeed*growthAttackSpeedMultiplier());
+    }else{
+      shoot(player.x,player.y,target,{kind:"qingyan-talisman",color:"#536b87",damage:player.attack*.8,speed:540,range:650,r:6,pierce:1,fxId:"FX_003",source:{type:"character",id:"qingyan-exclusive"},vfxTier:level>=4?2:1});cs.talismanCount++;
+      if(cs.talismanCount%6===0)addInkSpirit();cs.exclusiveTimer=1.2/(player.attackSpeed*growthAttackSpeedMultiplier());
+    }
+    triggerCharacterAnimation(player,"attack",{target});
+  }
+  function finishTimedCharacterStates(){
+    const cs=state.characterState,player=state.player;
+    if(state.character.key==="moxiaobai"&&!cs.inkEdgeFinalized&&state.time>=cs.inkEdgeUntil){cs.inkEdgeFinalized=true;damageArea({x:player.x,y:player.y,r:420,damage:player.attack*(state.growthConfig.flags.xiaobai_ultimate_final?.endDamage||4.5),kind:"xiaobai-ultimate-end",source:{type:"character",id:"moxiaobai"}});state.particles.push({kind:"claw",fxId:"FX_002",x:player.x,y:player.y,r:420,color:"#2d706b",life:.7,max:.7});}
+    if(state.character.key==="chihen"&&!cs.unyieldingFinalized&&state.time>=cs.unyieldingUntil){cs.unyieldingFinalized=true;const dealt=Math.max(0,state.damage-cs.unyieldingDamageStart),cap=state.growthConfig.flags.unyielding_heal_cap?.value||.35,heal=Math.min(player.maxHp*cap,dealt*.03);player.hp=Math.min(player.maxHp,player.hp+heal);textPop(player.x,player.y-40,`回生 +${Math.round(heal)}`,"#e3b09e",15);}
+    if(state.character.key==="chihen"&&!cs.bloodPrisonFinalized&&state.time>=cs.bloodPrisonUntil){cs.bloodPrisonFinalized=true;damageArea({x:player.x,y:player.y,r:430,damage:player.attack*(state.growthConfig.flags.blood_prison_end?.damage||6.5),kind:"chihen-blood-prison-end",source:{type:"character",id:"chihen"}});player.hp=Math.min(player.maxHp,player.hp+player.maxHp*.4);state.particles.push({kind:"claw",fxId:"FX_007",x:player.x,y:player.y,r:430,color:"#b8422f",life:.75,max:.75});}
+    if(state.character.key==="chihen"&&cs.lastLifePending&&state.time>=cs.lastLifeUntil){cs.lastLifePending=false;reviveChihen();}
+    if(state.character.key==="qingyan"&&cs.armyUntil&&state.time>=cs.armyUntil){cs.armyUntil=0;const army=state.inkSpirits.filter(spirit=>spirit.big);if(army.length){damageArea({x:player.x,y:player.y,r:200,damage:player.attack*2.2*Math.min(4,army.length)*state.growthConfig.summons.damage,kind:"qingyan-army-end",source:{type:"ink-spirit"}});army.forEach(spirit=>spirit.dead=true);if(state.growthConfig.flags.ghost_general){const data=QINGYAN_SUMMON_CATALOG.guardian,maxHp=player.maxHp*5;state.inkSpirits.push({type:"ink-spirit",catalogId:"guardian",kind:"mobile",name:"墨将",icon:"将",role:"终极",art:data.art,fallback_art:data.fallback_art,x:player.x,y:player.y,r:30,maxHp,hp:maxHp,attack:.1,special:state.time+2,attackCount:0,kills:0,temporary:true,big:true,star:3,expiresAt:state.time+5,buffUntil:state.time+5,dead:false});}burst(player.x,player.y,"#d6b66b",20,120,"FX_003");}}
+  }
+  function updateDelayedEffects(dt){for(const effect of state.delayedEffects){effect.delay-=dt;if(effect.delay<=0&&!effect.done){effect.done=true;effect.run();}}state.delayedEffects=state.delayedEffects.filter(effect=>!effect.done);}
+  function updateActiveSkills(dt){
+    const cs=state.characterState;for(const key of Object.keys(cs.skillCooldowns||{})){const before=cs.skillCooldowns[key];cs.skillCooldowns[key]=Math.max(0,before-dt);if(before>0&&cs.skillCooldowns[key]===0&&(cs.skillCharges[key]||0)===0)cs.skillCharges[key]=cs.skillMaxCharges[key]||1;}cs.skillCastLock=Math.max(0,(cs.skillCastLock||0)-dt);
+    if(state.character.key==="qingyan"&&cs.armyUntil>state.time){cs.armyRainTimer-=dt;if(cs.armyRainTimer<=0){const target=densestEnemy()||state.player;damageArea({x:target.x,y:target.y,r:180,damage:skillPower(2.2),kind:"qingyan-ink-rain",source:{type:"ink-spirit"}});state.particles.push({kind:"claw",fxId:"FX_003",x:target.x,y:target.y,r:180,color:"#536b87",life:.5,max:.5});cs.armyRainTimer=state.growthConfig.flags.ghost_parade_rain?.value||2;}}
+    finishTimedCharacterStates();updateDelayedEffects(dt);updateSkillBar();
+  }
+  function densestEnemy() {
+    const candidates=[];forEachEnemy(enemy=>candidates.push(enemy));let best=null,bestScore=-1;
+    for(const enemy of candidates){let score=enemy.elite?2:1;for(const other of candidates)if(other!==enemy&&dist(enemy,other)<180)score++;if(score>bestScore){best=enemy;bestScore=score;}}
+    return best;
+  }
+  function skillPower(multiplier){return state.player.attack*state.player.damageMul*multiplier;}
+  function castXiaobaiSkill(id){
+    const player=state.player,cs=state.characterState,source={type:"character",id:"moxiaobai"};
+    const flags=state.growthConfig.flags;
+    if(id==="skill1"){const distance=240*(1+(flags.dash_distance?.value||0)),dash=dashPlayer(distance),invuln=flags.dash_mastery?.invuln||.35,life=flags.dash_trail_duration?.value||3;player.invuln=Math.max(player.invuln,invuln);addTrail(dash.x,dash.y,dash.endX,dash.endY,{life,tick:.5,damage:skillPower(.45),slow:.30,kind:"xiaobai-dash-trail"});if(flags.dash_end_burst)damageArea({x:dash.endX,y:dash.endY,r:95,damage:skillPower(flags.dash_end_burst.damage),kind:"xiaobai-dash-end",source});if(flags.dash_echo)state.delayedEffects.push({delay:flags.dash_echo.delay,run:()=>{const target=nearest(player.x,player.y,720);if(target)shoot(player.x,player.y,target,{kind:"xiaobai-dash-echo",color:"#6ca9a1",damage:skillPower(flags.dash_echo.damage),speed:720,range:720,r:7,pierce:3,fxId:"FX_001",source});}});beam(dash.x,dash.y,dash.endX,dash.endY,"#4f928f","FX_001",null,3);toast("踏墨 · 墨痕留锋",900);return true;}
+    if(id==="skill2"){const radius=180*(1+(flags.wind_radius?.value||0));let hits=0;const strike=damage=>forEachEnemy(enemy=>{if(dist(player,enemy)>radius+enemy.r)return;let total=skillPower(damage);if(damage===2.4&&(enemy._xiaobaiWeaponHitUntil||0)>state.time)total+=skillPower(.8);hitEnemy(enemy,total,"xiaobai-return-wind",null,source);if(enemy!==state.boss)pushFrom(enemy,player,enemy.elite?60:150);hits++;});strike(2.4);if(flags.wind_second)state.delayedEffects.push({delay:flags.wind_second.delay,run:()=>{strike(flags.wind_second.damage);state.particles.push({kind:"claw",fxId:"FX_004",x:player.x,y:player.y,r:radius,color:"#4f928f",life:.48,max:.48,visualKind:"wave"});}});if(flags.wind_haste)cs.switchStanceUntil=state.time+flags.wind_haste.duration;if(flags.wind_refund&&hits>=flags.wind_refund.hits)cs.nextCooldownFlat=flags.wind_refund.seconds;state.particles.push({kind:"claw",fxId:"FX_004",x:player.x,y:player.y,r:radius,color:"#4f928f",life:.48,max:.48,visualKind:"wave"});toast(hits?"回风枪 · 清开身侧":"回风枪",900);return true;}
+    if(id==="skill3"){const direction=skillDirection(true),width=110*(1+(flags.cloud_width?.value||0)),eliteMultiplier=flags.cloud_elite?.value||1.4,hitCounts=flags.cloud_split?new Map():null,rising=flags.cloud_rising?{bonus:0,perKill:flags.cloud_rising.perKill,max:flags.cloud_rising.max}:null;let result=damageLine({x:player.x,y:player.y,dx:direction.x,dy:direction.y,length:750,width,damage:skillPower(flags.cloud_split?1.8:3.6),eliteMultiplier,kind:"xiaobai-cloudbreak",source,hitCounts,maxHits:2,rising});if(flags.cloud_split)for(const turn of[-.12,.12]){const extra=damageLine({x:player.x,y:player.y,dx:direction.x*Math.cos(turn)-direction.y*Math.sin(turn),dy:direction.x*Math.sin(turn)+direction.y*Math.cos(turn),length:750,width:width*.72,damage:skillPower(flags.cloud_split.damage||1.8),eliteMultiplier,kind:"xiaobai-cloudbreak-split",source,hitCounts,maxHits:2,rising});result={hits:result.hits+extra.hits,kills:result.kills+extra.kills};}if(result.kills>=5)cs.nextCooldownRatio=.7;state.particles.push({kind:"claw",fxId:"FX_001",x:player.x+direction.x*330,y:player.y+direction.y*330,r:155,color:"#2d706b",life:.42,max:.42});toast(result.kills>=5?"破云 · CD返还 30%":"破云 · 一线开天",1000);return true;}
+    if(id==="ultimate"){damageArea({x:player.x,y:player.y,r:2000,damage:skillPower(2.2),kind:"xiaobai-ultimate-open",source});const duration=flags.xiaobai_ultimate?.duration||5;cs.inkEdgeUntil=state.time+duration;cs.ultimateBaseEnd=cs.inkEdgeUntil;cs.ultimateKills=0;cs.inkEdgeFinalized=false;state.flash=.22;state.shake=12;burst(player.x,player.y,"#2d706b",18,120,"FX_001");toast("万墨归锋 · 墨锋状态！",1500);return true;}
+    return false;
+  }
+  function castChihenSkill(id){
+    const player=state.player,cs=state.characterState,source={type:"character",id:"chihen"};
+    const flags=state.growthConfig.flags;
+    if(id==="skill1"){const threshold=flags.bloodstep_free?.threshold||.30,low=player.hp/player.maxHp<threshold;if(!low)player.hp=Math.max(1,player.hp-player.hp*.05);const dash=dashPlayer(210),x=dash.x,y=dash.y;beam(x,y,dash.endX,dash.endY,"#b8422f","FX_007",null,3);state.delayedEffects.push({delay:.6,run:()=>{const before=state.kills;damageArea({x,y,r:130,damage:skillPower(low?3.9:flags.bloodstep_damage?.value||2.6),kind:"chihen-bloodstep",source});if(flags.bloodstep_blades)for(let i=0;i<flags.bloodstep_blades.count;i++){const target=nearest(x,y,520);if(target)shootAngle(x,y,Math.atan2(target.y-y,target.x-x)+spreadAngle(i,flags.bloodstep_blades.count,28),{kind:"chihen-bloodstep-blade",color:"#b8422f",damage:skillPower(flags.bloodstep_blades.damage),speed:620,range:520,r:6,pierce:1,fxId:"FX_007",source});}if(flags.bloodstep_refund&&state.kills>before&&state.time>=cs.bloodstepRefundAt){cs.skillCharges.skill1=Math.min(cs.skillMaxCharges.skill1,cs.skillCharges.skill1+1);cs.skillCooldowns.skill1=0;cs.bloodstepRefundAt=state.time+flags.bloodstep_refund.cooldown;}state.particles.push({kind:"claw",fxId:"FX_007",x,y,r:130,color:"#b8422f",life:.5,max:.5});}});toast(low?"血步 · 残血无耗":"血步 · 留影待爆",900);return true;}
+    if(id==="skill2"){const ratio=player.hp/player.maxHp,lostTens=Math.min(9,Math.floor((1-ratio)*10+1e-6)),damage=skillPower(3+lostTens*(flags.sever_lost_damage?.value||.25)),desperate=ratio<(flags.sever_last_stand?.threshold||0),radius=190*(1+(flags.sever_radius?.value||0))*(desperate?1+(flags.sever_last_stand?.range||0):1);let kills=0;forEachEnemy(enemy=>{if(dist(player,enemy)>radius+enemy.r)return;const before=!enemy.dead;if(desperate)cs.forcedCritUntil=state.time+.1;hitEnemy(enemy,damage,"chihen-life-sever",null,source);if(before&&enemy.dead)kills++;});const cap=flags.sever_heal_cap?.value||.10,heal=Math.min(cap,kills*.01)*player.maxHp;player.hp=Math.min(player.maxHp,player.hp+heal);state.particles.push({kind:"claw",fxId:"FX_007",x:player.x,y:player.y,r:radius,color:"#b8422f",life:.5,max:.5});toast(`断命斩 · 斩 ${kills} · 回生 ${Math.round(heal)}`,1100);return true;}
+    if(id==="skill3"){cs.unyieldingUntil=state.time+4;cs.unyieldingFinalized=false;cs.unyieldingDamageStart=state.damage;burst(player.x,player.y,"#b8422f",12,82,"FX_007");toast("不屈 · 四秒不死",1300);return true;}
+    if(id==="ultimate"){const strong=cs.livesRemaining>0,save=strong&&flags.blood_prison_save_life&&Math.random()<flags.blood_prison_save_life.chance;if(strong&&!save){cs.livesRemaining--;if(flags.life_spent_buff){player.runtime.damage*=1+flags.life_spent_buff.damage;player.runtime.attackSpeed*=1+flags.life_spent_buff.haste;recalculatePlayerStats();}}cs.bloodPrisonUntil=state.time+(strong?(flags.blood_prison_lv1?8:6):4);cs.bloodPrisonFinalized=false;player.hp=Math.max(1,player.hp);state.shake=15;state.flash=.3;burst(player.x,player.y,"#b8422f",22,135,"FX_007");toast(save?"九命·血狱 · 无命不耗":strong?`九命·血狱 · 余命 ${cs.livesRemaining}`:"血狱残式 · 四秒",1700);return true;}
+    return false;
+  }
+  function castQingyanSkill(id){
+    const player=state.player,cs=state.characterState,spirits=livingInkSpirits(),flags=state.growthConfig.flags;
+    if(id==="skill1"){cs.convertedTemporary=false;const count=flags.enlighten_count?.value||2,duration=flags.enlighten_duration?.value||10,permanent=livingInkSpirits("mobile").filter(spirit=>!spirit.temporary&&!spirit.big);for(let i=0;i<count;i++){if(permanent.length>=inkSpiritCap())strengthenSpirit(pick(permanent));else addInkSpirit({temporary:true,duration,forceKind:"mobile"});}toast(permanent.length>=inkSpiritCap()?"点灵 · 满阵升星":"点灵 · 万灵入阵",1100);return true;}
+    if(id==="skill2"){const existing=state.playerZones.filter(zone=>zone.kind==="qingyan-array");if(existing.length>=(flags.ink_array_count?.value||1))existing.sort((a,b)=>a.life-b.life)[0].life=0;const radius=210*(1+(flags.ink_array_radius?.value||0));state.playerZones.push({kind:"qingyan-array",fxId:"FX_005",vfxTier:3,x:player.x,y:player.y,r:radius,life:6,duration:6,tick:1,nextTick:0,damage:skillPower(flags.ink_array_damage?.value||.8),slow:.35,bindDuration:flags.ink_array_bind?.duration||0,source:{type:"character",id:"qingyan"}});toast("墨阵 · 阵地展开",1100);return true;}
+    if(id==="skill3"){const alive=livingInkSpirits("mobile");alive.forEach((spirit,index)=>{const angle=index*TAU/Math.max(1,alive.length);spirit.x=player.x+Math.cos(angle)*68;spirit.y=player.y+Math.sin(angle)*68;spirit.hp=Math.min(spirit.maxHp,spirit.hp+spirit.maxHp*(flags.recall_heal?.value||.5));spirit.buffUntil=state.time+3;});const hits=Math.min(3,alive.length),damage=flags.recall_charge?.damage||1.4;if(hits)damageArea({x:player.x,y:player.y,r:265,damage:skillPower(damage*hits),kind:"qingyan-return",source:{type:"ink-spirit"}});state.particles.push({kind:"claw",fxId:"FX_004",x:player.x,y:player.y,r:265,color:"#536b87",life:.55,max:.55});toast(`归灵 · ${alive.length} 灵归阵`,1100);return true;}
+    if(id==="ultimate"){const count=flags.ghost_parade_count?.value||4;for(let i=0;i<count;i++)addInkSpirit({forceKind:"mobile"});for(let i=0;i<(flags.ghost_parade_lv1?2:1);i++)addInkSpirit({temporary:true,big:true,duration:10,forceKind:"mobile"});if(flags.ghost_parade_lv1&&qingyanPool("fixed").length)addInkSpirit({temporary:true,duration:10,forceKind:"fixed"});cs.armyUntil=state.time+10;cs.armyRainTimer=.2;state.shake=10;burst(player.x,player.y,"#d6b66b",20,140,"FX_003");toast("百鬼墨行 · 万灵出纸！",1500);return true;}
+    return false;
+  }
+  function useActiveSkill(id,{force=false}={}){
+    if(!state.player||(!force&&state.mode!=="playing"))return false;const cs=state.characterState,skill=combatKitFor(state.character)?.skills?.find(item=>item.id===id);if(!skill||(!force&&((cs.skillCooldowns[id]||0)>0||(cs.skillCharges[id]||0)<=0||cs.skillCastLock>0)))return false;
+    const used=state.character.key==="moxiaobai"?castXiaobaiSkill(id):state.character.key==="chihen"?castChihenSkill(id):castQingyanSkill(id);if(!used)return false;
+    cs.skillCharges[id]=Math.max(0,(cs.skillCharges[id]||1)-1);const baseCooldown=Math.max(.2,skill.cooldown*state.player.cooldownMul*(cs.nextCooldownRatio||1)-(cs.nextCooldownFlat||0));cs.skillCooldowns[id]=cs.skillCharges[id]>0?0:baseCooldown;cs.nextCooldownRatio=0;cs.nextCooldownFlat=0;cs.skillCastLock=.12;triggerCharacterAnimation(state.player,"attack",{restart:true,target:nearest(state.player.x,state.player.y,700)});updateSkillBar();return true;
+  }
+  function renderSkillBar(){
+    if(!ui.skills||!state.player)return;const kit=combatKitFor(state.character);ui.skills.innerHTML=(kit?.skills||[]).map(skill=>`<button class="active-skill${skill.ultimate?" ultimate":""}" data-active-skill="${skill.id}" title="${skill.name} · ${skill.desc}"><span class="skill-key">${skill.key}</span><b>${skill.icon}</b><small>${skill.name}</small><i></i><em></em></button>`).join("");
+    ui.skills.querySelectorAll("[data-active-skill]").forEach(button=>button.addEventListener("pointerdown",event=>{event.preventDefault();useActiveSkill(button.dataset.activeSkill);}));updateSkillBar();
+  }
+  function updateSkillBar(){
+    if(!ui.skills||!state.player)return;const cs=state.characterState,kit=combatKitFor(state.character);for(const skill of kit?.skills||[]){const button=ui.skills.querySelector(`[data-active-skill="${skill.id}"]`);if(!button)continue;const remaining=cs.skillCooldowns?.[skill.id]||0,ratio=clamp(remaining/(skill.cooldown*state.player.cooldownMul),0,1),charges=cs.skillCharges?.[skill.id]||0,max=cs.skillMaxCharges?.[skill.id]||1;button.classList.toggle("cooling",remaining>0||charges<=0);button.style.setProperty("--cooldown",`${ratio*100}%`);const label=button.querySelector("em");if(label)label.textContent=max>1&&charges>0?`${charges}/${max}`:remaining>0?remaining.toFixed(remaining<10?1:0):"READY";}
   }
   function reviveChihen() {
     const cs = state.characterState, player = state.player, mechanics = state.character.mechanics;
     if (state.character.key !== "chihen" || cs.livesRemaining <= 0) return false;
     cs.livesRemaining--; cs.revivesUsed++; cs.shieldCharges += mechanics.reviveShieldCharges || 1;
     const retention = state.growthConfig.revive.retention || mechanics.reviveMaxHpMultiplier;
-    const immortalPenalty = state.growthConfig.breakthrough === "BREAK_NINE_A" ? .9 : 1, reviveDamage = 1 + (mechanics.reviveDamageMultiplier - 1) * immortalPenalty, reviveHaste = 1 + (mechanics.reviveAttackSpeedMultiplier - 1) * immortalPenalty;
-    player.base.maxHp = Math.max(8, player.base.maxHp * retention); player.runtime.damage *= reviveDamage; player.runtime.attackSpeed *= reviveHaste; player.runtime.crit += mechanics.reviveCritBonus * immortalPenalty;
+    const reviveDamage = mechanics.reviveDamageMultiplier, reviveHaste = mechanics.reviveAttackSpeedMultiplier;
+    player.base.maxHp = Math.max(8, player.base.maxHp * retention); player.runtime.damage *= reviveDamage; player.runtime.attackSpeed *= reviveHaste; player.runtime.crit += mechanics.reviveCritBonus;
     if (state.growthConfig.flags.revive_afterfire) cs.afterfireUntil = state.time + state.growthConfig.flags.revive_afterfire.duration;
     if (state.growthConfig.flags.post_revive_death_guard) { cs.deathGuardUntil = state.time + state.growthConfig.flags.post_revive_death_guard.duration + (player.growthCards.CARD_NINE_UNYIELDING ? 1 : 0); cs.deathGuardReady = true; }
     if (state.growthConfig.flags.revive_random_mark) {
@@ -537,13 +786,13 @@
       const markBoost = player.growthCards.CARD_NINE_DEATHMARK ? 1.25 : 1;
       if (mark === "damage") player.runtime.damage *= 1 + .08 * markBoost; if (mark === "attackSpeed") player.runtime.attackSpeed *= 1 + .08 * markBoost; if (mark === "crit") player.runtime.crit += .05 * markBoost;
     }
-    if (state.growthConfig.breakthrough === "BREAK_NINE_B") { player.runtime.damage *= 1.12; player.runtime.attackSpeed *= 1.08; player.runtime.crit += .04; }
+    if (state.growthConfig.flags.life_spent_buff) { player.runtime.damage *= 1 + state.growthConfig.flags.life_spent_buff.damage; player.runtime.attackSpeed *= 1 + state.growthConfig.flags.life_spent_buff.haste; }
     recalculatePlayerStats(); player.hp = player.maxHp; player.invuln = 1.5; state.flash = .28; state.shake = 14;
     burst(player.x, player.y, "#b8422f", 18, 95, "FX_007"); toast(`九命复生 · 余命 ${cs.livesRemaining} · 墨环护命`, 2400); return true;
   }
   function updateCharacterAbilities(dt) {
-    if (state.character.key === "chihen") updateChihen(dt);
-    if (state.character.key === "qingyan") updateQingyan(dt);
+    updateExclusiveWeapon(dt); updateActiveSkills(dt);
+    if (state.character.key === "qingyan") { updateLegacySummons(dt); updateInkSpirits(dt); }
   }
 
   function toast(text, ms = 1800) {
@@ -557,6 +806,8 @@
   function upgradePool() {
     const player = state.player, pool = [], weaponCount = Object.keys(player.weapons).length, deviceCount = Object.keys(player.devices).length, summonCount = Object.keys(player.summonLevels || {}).length;
     const slotRules = state.slotRules || state.character?.slot_rules || CHARACTER.slot_rules;
+    const exclusive = combatKitFor(state.character)?.exclusive;
+    if (exclusive && player.exclusiveLevel < exclusive.max) pool.push({ type:"exclusive", id:exclusive.id, level:player.exclusiveLevel + 1, ...exclusive, tags:"角色固有 · 不占武器槽" });
     Object.entries(WEAPONS).forEach(([id, data]) => { const level = player.weapons[id] || 0; if (level < data.max && (level > 0 || weaponCount < slotRules.weapon)) pool.push({ type: "weapon", id, level: level + 1, ...data }); });
     Object.entries(PASSIVES).forEach(([id, data]) => { const level = player.passives[id] || 0; if (level < data.max) pool.push({ type: "passive", id, level: level + 1, ...data }); });
     Object.entries(DEVICES).forEach(([id, data]) => { const level = player.devices[id] || 0; if (level < data.max && (level > 0 || deviceCount < slotRules.device)) pool.push({ type: "device", id, level: level + 1, ...data }); });
@@ -588,7 +839,7 @@
       button.className = `upgrade-card ${choice.rarity}`;
       const rarityName = choice.rarity === "epic" ? "史诗" : choice.rarity === "rare" ? "稀有" : "普通";
       const bonus = choice.rarity === "epic" ? " · 效果 1.5 倍" : choice.rarity === "rare" ? " · 效果 1.25 倍" : "";
-      const ultimate = choice.type === "weapon" && choice.level === 7 ? `<strong class="ultimate-label">终极 · ${choice.name}</strong>` : "";
+      const ultimate = ["weapon","exclusive"].includes(choice.type) && choice.level === 7 ? `<strong class="ultimate-label">终极 · ${choice.name}</strong>` : "";
       button.innerHTML = `<span class="rarity">${rarityName}</span><span class="upgrade-icon">${choice.icon}</span><h3>${choice.name} <small>Lv.${choice.level}</small></h3><p>${choice.desc}${bonus}</p>${ultimate}<span class="tag">${choice.tags || (choice.type === "passive" ? "基础修行" : "")}</span>`;
       button.onclick = () => applyUpgrade(choice);
       ui.choices.appendChild(button);
@@ -602,6 +853,7 @@
   function applyUpgrade(choice) {
     const factor = choice.rarity === "epic" ? 1.5 : choice.rarity === "rare" ? 1.25 : 1;
     if (choice.type === "weapon") setWeaponLevel(choice.id, choice.level, { fromUpgrade:true, rarity:choice.rarity });
+    if (choice.type === "exclusive") setExclusiveLevel(choice.level);
     if (choice.type === "device") setDeviceLevel(choice.id, choice.level);
     if (choice.type === "summon") setSummonLevel(choice.id, choice.level);
     if (choice.type === "growthcard") applyGrowthCard(choice);
@@ -654,20 +906,17 @@
     if (stats.cd && minor.cd) stats.cd *= 1 - minor.cd;
     if (stats.range && minor.range) stats.range *= 1 + minor.range;
     if (stats.speed && minor.speed) stats.speed *= 1 + minor.speed;
-    if (state.growthConfig?.breakthrough === "BREAK_BAL_B" && Object.keys(state.player.weapons).length <= 2 && stats.cd) stats.cd *= .92;
     return stats;
   }
   function weaponVfxTier(id) {
     const level = state.player?.weapons?.[id] || 1; let tier = level >= 7 ? 3 : level >= 3 ? 2 : 1;
     if (state.growthConfig?.vfx?.weapon && level >= state.growthConfig.vfx.weapon.level) tier = Math.max(tier, state.growthConfig.vfx.weapon.tier);
     if (state.character?.key === "chihen" && state.growthConfig?.flags?.revive_vfx_tier) tier += state.characterState.revivesUsed;
-    if (state.growthConfig?.breakthrough === "BREAK_NINE_B" && state.characterState.livesRemaining === 0) tier = 3;
     return clamp(tier, 1, 3);
   }
   function summonVfxTier(summon) {
     let tier = summon.level >= 5 ? 3 : summon.level >= 3 ? 2 : 1;
     if (state.growthConfig?.vfx?.summon && summon.level >= state.growthConfig.vfx.summon.level) tier = Math.max(tier, state.growthConfig.vfx.summon.tier);
-    if (state.growthConfig?.breakthrough === "BREAK_SUM_B" && summon.level >= 5) tier = 3;
     return clamp(tier, 1, 3);
   }
   function heldWeaponTagCount() { return new Set(Object.keys(state.player.weapons).map(id => WEAPONS[id]?.logicTags?.[0]).filter(Boolean)).size; }
@@ -676,14 +925,45 @@
     if (flags.weapon_tag_resonance && count >= 3) multiplier *= 1.05;
     if (cs.switchStanceUntil > state.time) multiplier *= 1.18;
     if (state.character.key === "chihen" && cs.afterfireUntil > state.time) multiplier *= 1.30;
-    if (state.growthConfig?.breakthrough === "BREAK_BAL_B" && Object.keys(state.player.weapons).length <= 2) multiplier *= 1.08;
+    if (state.character.key === "chihen") {
+      const lostTens = Math.min(9, Math.floor((1 - state.player.hp / Math.max(1, state.player.maxHp)) * 10 + 1e-6));
+      multiplier *= 1 + lostTens * (flags.blood_hunt_haste?.value||.03);
+      if(state.player.hp/state.player.maxHp<(flags.low_hp_haste?.threshold||0))multiplier*=1+(flags.low_hp_haste?.value||0);
+      if (cs.unyieldingUntil > state.time) multiplier *= flags.unyielding_berserk ? 1+flags.unyielding_berserk.haste : 1.40;
+      if (cs.bloodPrisonUntil > state.time) multiplier *= 2;
+    }
+    if(state.character.key==="moxiaobai")multiplier*=1+(flags.spear_haste?.value||0);
+    if (state.character.key === "moxiaobai" && cs.inkEdgeUntil > state.time) multiplier *= 1.80;
     return multiplier;
+  }
+  function characterDamageMultiplier() {
+    const cs = state.characterState;
+    let multiplier = 1;
+    if (state.character.key === "chihen") {
+      const lostTens = Math.min(9, Math.floor((1 - state.player.hp / Math.max(1, state.player.maxHp)) * 10 + 1e-6));
+      multiplier *= 1 + lostTens * (state.growthConfig.flags.blood_hunt_damage?.value||.05);
+      if(cs.lastLifeUntil>state.time)multiplier*=2;
+      if (cs.unyieldingUntil > state.time) multiplier *= state.growthConfig.flags.unyielding_berserk?1+state.growthConfig.flags.unyielding_berserk.damage:1.35;
+      if (cs.bloodPrisonUntil > state.time) multiplier *= 1.80;
+    }
+    if (state.character.key === "qingyan") multiplier *= 1 + Math.min(6, livingInkSpirits().length + state.summons.filter(item => !item.dead).length) * (state.growthConfig.flags.resonance_damage?.value||.06);
+    return multiplier;
+  }
+  function effectiveCritChance() {
+    let value = state.player.crit;
+    if (state.character.key === "chihen" && state.player.hp / Math.max(1, state.player.maxHp) < .30) value += .15+(state.growthConfig.flags.blood_eye?.value||0);
+    if (state.character.key === "chihen" && state.characterState.bloodPrisonUntil > state.time) value += .30;
+    return clamp(value, 0, 1);
+  }
+  function effectiveMoveSpeedMultiplier() {
+    if (state.character.key === "moxiaobai" && state.characterState.inkEdgeUntil > state.time) return 1.25;
+    if (state.character.key === "chihen" && state.characterState.bloodPrisonUntil > state.time) return 1.20;
+    if(state.character.key==="chihen"&&state.characterState.unyieldingUntil>state.time&&state.growthConfig.flags.unyielding_berserk)return 1+state.growthConfig.flags.unyielding_berserk.speed;
+    return 1;
   }
   function growthWeaponDamageMultiplier() {
     let multiplier = 1; const flags = state.growthConfig?.flags || {}, count = heldWeaponTagCount();
     if (flags.weapon_tag_resonance && count >= 2) multiplier *= 1.04;
-    if (state.growthConfig?.breakthrough === "BREAK_BAL_A") multiplier *= 1 + Math.min(4, count) * .03;
-    if (state.growthConfig?.breakthrough === "BREAK_BAL_B" && Object.keys(state.player.weapons).length <= 2) multiplier *= 1.18;
     return multiplier;
   }
   function spreadAngle(index, count, degrees = 0) { return count <= 1 ? 0 : (index / (count - 1) - .5) * degrees * Math.PI / 180; }
@@ -789,14 +1069,25 @@
     else if (!turret) deployTurret();
     else turret.level = level;
   }
-  function beam(x1, y1, x2, y2, color, fxId = "FX_003", weaponId = null, vfxTier = null) { state.particles.push({ kind: "beam", fxId, weaponId, vfxTier:vfxTier || (weaponId ? weaponVfxTier(weaponId) : 1), visual: fxMeta(fxId).visual, x: x1, y: y1, x2, y2, color, life: .14, max: .14 }); }
-  function burst(x, y, color, count = 10, radius = 55, fxId = "FX_002") {
-    count = Math.min(count, fxMeta(fxId).maxParticles || count);
+  const vfxByLegacy=Object.fromEntries(Object.values(VFX_LIBRARY||{}).map(item=>[item.legacy_fx_id,item]));
+  function playVFX(id, options={}) {
+    if(!state?.particles)return null;
+    const data=VFX_LIBRARY?.[id]||vfxByLegacy[id]||{id,legacy_fx_id:id,renderer:"burst"},fxId=options.fxId||data.legacy_fx_id||"FX_001",renderer=options.renderer||data.renderer||"burst",color=options.color||data.color||fxMeta(fxId).color;
+    if(renderer==="beam"){
+      const life=options.duration||data.duration||.14;state.particles.push({kind:"beam",resourceId:data.id||id,fxId,weaponId:options.weaponId||null,vfxTier:options.vfxTier||1,visual:fxMeta(fxId).visual,x:options.x||0,y:options.y||0,x2:options.x2??options.x??0,y2:options.y2??options.y??0,color,life,max:life});return data;
+    }
+    if(renderer==="pulse"||renderer==="zone"||renderer==="warning"){
+      const life=options.duration||data.duration||.42;state.particles.push({kind:"claw",resourceId:data.id||id,fxId,weaponId:options.weaponId||null,vfxTier:options.vfxTier||1,visualKind:data.shape||renderer,x:options.x||0,y:options.y||0,r:(options.radius||55)*(options.scale||1),color,life,max:life});return data;
+    }
+    let count=Math.round((options.count||data.count||10)*(options.scale||1)),radius=(options.radius||data.radius||55)*(options.scale||1);count=Math.min(count,fxMeta(fxId).maxParticles||count);
     for (let index = 0; index < count; index++) {
       const angle = index / count * TAU + rand(-.15, .15);
-      state.particles.push({ kind: "dot", fxId, visual: fxMeta(fxId).visual, x, y, vx: Math.cos(angle) * rand(radius, radius * 2), vy: Math.sin(angle) * rand(radius, radius * 2), r: rand(2, 5), color, life: .35, max: .35 });
+      const life=options.duration||data.duration||.35;state.particles.push({ kind:"dot",resourceId:data.id||id,fxId,visual:fxMeta(fxId).visual,x:options.x||0,y:options.y||0,vx:Math.cos(angle)*rand(radius,radius*2),vy:Math.sin(angle)*rand(radius,radius*2),r:rand(2,5)*(options.scale||1),color,life,max:life });
     }
+    return data;
   }
+  function beam(x1, y1, x2, y2, color, fxId = "FX_003", weaponId = null, vfxTier = null) { playVFX(fxId,{renderer:"beam",x:x1,y:y1,x2,y2,color,fxId,weaponId,vfxTier:vfxTier || (weaponId ? weaponVfxTier(weaponId) : 1)}); }
+  function burst(x, y, color, count = 10, radius = 55, fxId = "FX_002") { playVFX(fxId,{renderer:"burst",x,y,color,count,radius,fxId}); }
   function pushFrom(entity, source, amount) {
     const angle = Math.atan2(entity.y - source.y, entity.x - source.x);
     entity.x = clamp(entity.x + Math.cos(angle) * amount, entity.r || 20, WORLD_W - (entity.r || 20));
@@ -806,34 +1097,47 @@
   function spawnEnemy(type, elite = false) {
     const player = state.player, angle = rand(0, TAU), radius = Math.max(viewW, viewH) * .62 + rand(80, 180), data = ENEMY_TYPES[type];
     if (!data) return;
-    const progress = state.duration ? state.time / state.duration : 0, scale = 1 + progress * 2.05;
+    const progress = state.duration ? state.time / state.duration : 0, scale = 1 + progress * 2.05, isElite = elite || data.category === "elite", modifiers = isElite ? (data.elite_modifiers || {}) : {};
+    const hpScale = isElite ? (modifiers.hp || 4.2) : 1, damageScale = isElite ? (modifiers.damage || 1.35) : 1, speedScale = isElite ? (modifiers.speed || 1.06) : 1, radiusScale = isElite ? (modifiers.radius || 1.35) : 1, xpScale = isElite ? (modifiers.xp || 7) : 1;
     state.enemies.push({
       ...data, type, x: clamp(player.x + Math.cos(angle) * radius, 40, WORLD_W - 40), y: clamp(player.y + Math.sin(angle) * radius, 40, WORLD_H - 40),
-      hp: data.hp * scale * (elite ? 4.2 : 1), maxHp: data.hp * scale * (elite ? 4.2 : 1), speed: data.speed * (1 + progress * .16),
-      damage: data.damage * (1 + progress * .65), r: data.r * (elite ? 1.35 : 1), xp: data.xp * (elite ? 7 : 1), elite,
-      shot: rand(1, 3), dead: false, phase: rand(0, TAU)
+      hp: data.hp * scale * hpScale, maxHp: data.hp * scale * hpScale, speed: data.speed * (1 + progress * .16) * speedScale,
+      damage: data.damage * (1 + progress * .65) * damageScale, r: data.r * radiusScale, xp: data.xp * xpScale, elite:isElite,
+      shot: rand(.35, data.attack_cooldown || 1.1), dead: false, phase: rand(0, TAU), animation:createConfiguredAnimation(data)
     });
+  }
+  function timelinePhase(time = state.time) {
+    const phases=RUN_TIMELINE?.phases || []; return phases.find(item=>time>=item.start&&time<item.end) || phases[phases.length-1] || {name:"庭院试炼",spawn_interval:[.74,.24],batch:[1,6],max_enemies:150};
+  }
+  function weightedEnemyPick(time = state.time) {
+    const pool=Object.entries(ENEMY_TYPES).filter(([,data])=>data.category!=="elite"&&(data.available_time||0)<=time&&(data.spawn_weight||0)>0);
+    if(!pool.length)return Object.keys(ENEMY_TYPES)[0];
+    let roll=Math.random()*pool.reduce((sum,[,data])=>sum+(data.spawn_weight||1),0);
+    for(const [id,data] of pool){roll-=data.spawn_weight||1;if(roll<=0)return id;}return pool[pool.length-1][0];
   }
   function spawnTick(dt) {
     state.lastSpawn -= dt;
     if (state.lastSpawn > 0 || state.bossSpawned) return;
-    const progress = state.time / state.duration, batch = 1 + (progress * 4 | 0) + (state.time > state.duration * .68 ? 2 : 0);
-    const available = progress < .18 ? ["mouse", "bug"] : progress < .42 ? ["mouse", "bug", "hedgehog", "bee"] : ["mouse", "bug", "hedgehog", "bee", "frog", "snail"];
-    for (let index = 0; index < batch && state.enemies.length < 150; index++) spawnEnemy(pick(available));
-    state.lastSpawn = Math.max(.13, .74 - progress * .5);
+    const phase=timelinePhase(), progress=clamp((state.time-phase.start)/Math.max(1,phase.end-phase.start),0,1), batch=Math.round(lerp(phase.batch?.[0]||1,phase.batch?.[1]||4,progress));
+    for (let index = 0; index < batch && state.enemies.length < (phase.max_enemies || 150); index++) spawnEnemy(weightedEnemyPick());
+    state.lastSpawn = Math.max(.12,lerp(phase.spawn_interval?.[0]||.74,phase.spawn_interval?.[1]||.24,progress));
   }
   function forEachEnemy(callback) { for (const enemy of state.enemies) if (!enemy.dead) callback(enemy); if (state.boss && !state.boss.dead) callback(state.boss); }
 
   function updateEnemies(dt) {
     const player = state.player;
     for (const enemy of state.enemies) {
-      if (enemy.dead) continue;
+      if (enemy.dead) { updateConfiguredAnimation(enemy,dt,0,0); continue; }
       enemy.phase += dt * 4;
+      if ((enemy.stunUntil || 0) > state.time) continue;
       const distance = dist(enemy, player), angle = Math.atan2(player.y - enemy.y, player.x - enemy.x), moveScale = (enemy._slowUntil || 0) > state.time ? Math.max(.45, 1 - (enemy._slowAmount || .2)) : 1;
-      if (enemy.ranged && distance < 310) {
-        enemy.x -= Math.cos(angle) * enemy.speed * moveScale * dt * .42; enemy.y -= Math.sin(angle) * enemy.speed * moveScale * dt * .42; enemy.shot -= dt;
-        if (enemy.shot <= 0) { enemyShot(enemy.x, enemy.y, angle, enemy.type === "frog" ? "glob" : "sting", enemy.damage); enemy.shot = enemy.type === "frog" ? 2.7 : 2.1; }
-      } else { enemy.x += Math.cos(angle) * enemy.speed * moveScale * dt; enemy.y += Math.sin(angle) * enemy.speed * moveScale * dt; }
+      let dx=Math.cos(angle),dy=Math.sin(angle),speedFactor=enemy.ai_type==="rush"?1.08:1;
+      if(enemy.ai_type==="zigzag"){const sway=Math.sin(enemy.phase*1.7)*.42,cos=Math.cos(sway),sin=Math.sin(sway);[dx,dy]=[dx*cos-dy*sin,dx*sin+dy*cos];}
+      if (enemy.ranged && distance < (enemy.preferred_range || 310)) {
+        dx*=-.42;dy*=-.42;enemy.shot -= dt;
+        if (enemy.shot <= 0) { enemyShot(enemy.x, enemy.y, angle, enemy.projectile_kind || "sting", enemy.damage); enemy.shot = enemy.attack_cooldown || 2.1; triggerConfiguredAnimation(enemy,"attack"); }
+      }
+      enemy.x=clamp(enemy.x+dx*enemy.speed*moveScale*speedFactor*dt,enemy.r,WORLD_W-enemy.r);enemy.y=clamp(enemy.y+dy*enemy.speed*moveScale*speedFactor*dt,enemy.r,WORLD_H-enemy.r);updateConfiguredAnimation(enemy,dt,dx,dy);
       if (distance < enemy.r + player.r) hurtPlayer(enemy.damage, enemy.x, enemy.y);
     }
     for (const enemy of state.enemies) if (enemy.dead) enemy.death -= dt;
@@ -853,13 +1157,18 @@
     const cs = state.characterState, summonSource = Boolean(SUMMONS[source?.type]);
     if (weaponId && !summonSource) raw *= growthWeaponDamageMultiplier();
     if (weaponId && state.growthConfig.flags.distance_charge && cs.stepEdgeCharged) { raw *= state.growthConfig.flags.distance_charge.multiplier; cs.stepEdgeCharged = false; state.player.movedDistance = 0; burst(enemy.x, enemy.y, "#4f928f", 10, 48, "FX_001"); }
-    const forcedCrit = !summonSource && cs.forcedCritUntil > state.time;
+    const spiritSource = source?.type === "ink-spirit";
+    if (!summonSource && !spiritSource) raw *= characterDamageMultiplier();
+    const forcedCrit = !summonSource && !spiritSource && cs.forcedCritUntil > state.time;
     const growthCrit = state.growthConfig.flags.weapon_tag_resonance && heldWeaponTagCount() >= 4 ? .04 : 0;
     const summonCrit = summonSource && state.player.growthCards.CARD_SUM_FORMATION ? .08 : 0;
-    const critical = summonSource ? Math.random() < summonCrit : forcedCrit || Math.random() < state.player.crit + growthCrit, damage = raw * (critical ? 1.85 : 1);
+    const critical = summonSource || spiritSource ? Math.random() < summonCrit : forcedCrit || Math.random() < effectiveCritChance() + growthCrit, damage = raw * (critical ? state.player.critDamage : 1);
     if (forcedCrit) cs.forcedCritUntil = 0;
     enemy.hp -= damage; state.damage += damage; recordDamage(damage); state.highHit = Math.max(state.highHit, damage);
+    if(enemy!==state.boss)triggerConfiguredAnimation(enemy,"hit");
+    if (state.character.key === "chihen" && !summonSource && !spiritSource && state.growthConfig.flags.low_hp_lifesteal && state.player.hp / Math.max(1, state.player.maxHp) < state.growthConfig.flags.low_hp_lifesteal.threshold) state.player.hp = Math.min(state.player.maxHp, state.player.hp + damage * state.growthConfig.flags.low_hp_lifesteal.value);
     enemy.lastHitSource = source || null;
+    if (state.character.key === "moxiaobai" && (weaponId === "exclusive-moxiaobai" || kind.startsWith("xiaobai"))) enemy._xiaobaiWeaponHitUntil = state.time + 1;
     if (weaponId) state.weaponDamage[weaponId] = (state.weaponDamage[weaponId] || 0) + damage;
     textPop(enemy.x, enemy.y - enemy.r, Math.round(damage), critical ? "#d39b35" : "#f8f1e3", critical ? 18 : 12);
     if (kind === "bell" && Math.random() < .25) enemy.slow = .35;
@@ -868,8 +1177,23 @@
   function killEnemy(enemy, source = null) {
     enemy.deathX = clamp(enemy.x, enemy.r || 20, WORLD_W - (enemy.r || 20));
     enemy.deathY = clamp(enemy.y, enemy.r || 20, WORLD_H - (enemy.r || 20));
-    enemy.dead = true; enemy.death = .3; state.kills++; if (enemy.elite) state.elites++;
-    if (source?.type && SUMMONS[source.type] && state.character.key === "qingyan") onSummonKill();
+    enemy.dead = true; enemy.death = Math.max(.3,configuredAnimationDuration(enemy,"death")); triggerConfiguredAnimation(enemy,"death"); state.kills++; if (enemy.elite) state.elites++;
+    if (state.character.key === "moxiaobai") {
+      const flags=state.growthConfig.flags,cs=state.characterState;
+      if(source?.id==="xiaobai-exclusive"&&flags.spear_kill_charge&&!cs.spearCharged){cs.spearKillCounter=(cs.spearKillCounter||0)+1;if(cs.spearKillCounter>=flags.spear_kill_charge.kills){cs.spearCharged=true;textPop(state.player.x,state.player.y-44,"万枪归一","#83b8b0",16);}}
+      if(cs.inkEdgeUntil>state.time&&flags.xiaobai_ultimate_final){cs.ultimateKills=(cs.ultimateKills||0)+1;if(cs.ultimateKills%10===0){const extended=Math.max(0,cs.inkEdgeUntil-cs.ultimateBaseEnd);if(extended<flags.xiaobai_ultimate_final.maxExtend)cs.inkEdgeUntil+=Math.min(flags.xiaobai_ultimate_final.killExtend,flags.xiaobai_ultimate_final.maxExtend-extended);}}
+      if(flags.dash_mastery&&Math.random()<flags.dash_mastery.chance){cs.skillCharges.skill1=Math.min(cs.skillMaxCharges.skill1,cs.skillCharges.skill1+1);if(cs.skillCharges.skill1>0)cs.skillCooldowns.skill1=0;}
+    }
+    if (state.character.key === "qingyan" && (source?.type === "ink-spirit" || source?.type && SUMMONS[source.type])) {
+      onSummonKill();
+      if(source?.type==="ink-spirit"&&source.temporary&&!source.big&&state.growthConfig.flags.enlighten_permanent&&!state.characterState.convertedTemporary){source.kills=(source.kills||0)+1;if(source.kills>=state.growthConfig.flags.enlighten_permanent.kills){const permanent=livingInkSpirits("mobile").filter(spirit=>!spirit.temporary&&!spirit.big);if(permanent.length>=inkSpiritCap()){strengthenSpirit(pick(permanent));source.dead=true;}else{source.temporary=false;source.expiresAt=0;}state.characterState.convertedTemporary=true;textPop(source.x,source.y-34,"化真","#d6b66b",17);burst(source.x,source.y,"#d6b66b",12,70,"FX_003");}}
+    }
+    const bloodBladeEnabled=(state.player.exclusiveLevel||1)>=5||state.growthConfig.flags.blood_blade;
+    if (state.character.key === "chihen" && source?.id === "chihen-exclusive" && bloodBladeEnabled && Math.random() < (state.growthConfig.flags.blood_blade?.chance||.20)) {
+      const target = nearest(enemy.x, enemy.y, 420);
+      if (target) shoot(enemy.x, enemy.y, target, { kind:"chihen-blood-blade", color:"#b8422f", damage:skillPower((state.player.exclusiveLevel || 1) >= 6 ? 1.10 : state.growthConfig.flags.blood_blade?.damage||.85), speed:650, range:520, r:7, bounces:state.growthConfig.flags.blood_blade_chain?.value||2, retention:.8, fxId:"FX_007", source:{type:"character",id:"chihen-blood-blade"}, scaleWithPlayer:false, vfxTier:2 });
+    }
+    if(state.character.key==="chihen"&&source?.id==="chihen-blood-blade"&&state.growthConfig.flags.blood_blade_kill_haste)state.characterState.exclusiveTimer*=1-state.growthConfig.flags.blood_blade_kill_haste.value;
     if (enemy === state.boss) {
       state.coins += 80; burst(enemy.x, enemy.y, "#ad853d", 44, 150); toast("泼墨狸将收笔认输！", 2800); ui.bossHud.classList.add("hidden");
       if (!state.dev) setTimeout(() => endGame(true), 2200);
@@ -879,7 +1203,7 @@
     for (let index = 0; index < count; index++) state.pickups.push({ kind: "xp", x: enemy.x + rand(-12, 12), y: enemy.y + rand(-12, 12), value: enemy.xp / count, r: enemy.elite ? 8 : 5 });
     if (Math.random() < (enemy.elite ? .75 : .08)) state.pickups.push({ kind: "coin", x: enemy.x, y: enemy.y, value: enemy.elite ? 18 : pick([1, 2, 3]), r: 7 });
     if (Math.random() < .012) state.pickups.push({ kind: "heart", x: enemy.x, y: enemy.y, value: 14, r: 9 });
-    burst(enemy.x, enemy.y, enemy.elite ? "#b8422f" : "#2a2d29", enemy.elite ? 18 : 7, enemy.elite ? 80 : 36, enemy.death_fx || "FX_006");
+    playVFX(enemy.death_effect || "death_ink", {x:enemy.x,y:enemy.y,scale:enemy.elite?1.7:1,color:enemy.elite?"#b8422f":undefined});
   }
   function hurtPlayer(raw, sourceX, sourceY) {
     const player = state.player;
@@ -895,11 +1219,17 @@
       if (state.growthConfig.flags.shield_break_next_crit) cs.forcedCritUntil = state.time + state.growthConfig.flags.shield_break_next_crit.duration;
       return;
     }
-    const wardReduction = state.character.key === "qingyan" && cs.wardUntil > state.time ? .35 : 0;
-    const damage = Math.max(1, raw * (1 - player.armor) * (1 - wardReduction));
+    const spiritWard=state.character.key==="qingyan"&&state.growthConfig.flags.summon_ward?Math.min(.30,Math.floor(livingInkSpirits().length/state.growthConfig.flags.summon_ward.per)*state.growthConfig.flags.summon_ward.value):0;
+    const wardReduction = Math.max(spiritWard,state.character.key === "qingyan" && cs.wardUntil > state.time ? .35 : 0);
+    const unyieldingReduction = state.character.key === "chihen" && cs.unyieldingUntil > state.time ? (state.growthConfig.flags.unyielding_berserk?0:state.growthConfig.flags.unyielding_reduction?.value||.50) : 0;
+    const damage = Math.max(1, raw * (1 - player.armor) * (1 - wardReduction) * (1 - unyieldingReduction));
     player.hp -= damage; player.invuln = .62; state.taken += damage; state.shake = 8; state.flash = .15; sound("hurt"); triggerCharacterAnimation(player, "hit", { restart: true, target: { x: sourceX, y: sourceY } });
     textPop(player.x, player.y - 30, `-${Math.round(damage)}`, "#d44f42", 17); pushFrom(player, { x: sourceX, y: sourceY }, 20);
+    if (player.hp <= 0 && state.character.key === "chihen" && cs.unyieldingUntil > state.time) { player.hp = 1; player.invuln = .2; textPop(player.x, player.y - 34, "不屈", "#f0c6aa", 16); return; }
+    if (player.hp <= 0 && state.character.key === "chihen" && cs.bloodPrisonUntil > state.time) { player.hp = 1; player.invuln = .2; return; }
+    if (player.hp <= 0 && state.character.key === "chihen" && cs.lastLifeUntil > state.time) { player.hp = 1; player.invuln = .2; return; }
     if (player.hp <= 0 && state.character.key === "chihen" && cs.deathGuardReady && cs.deathGuardUntil > state.time) { player.hp = 1; cs.deathGuardReady = false; player.invuln = .6; burst(player.x, player.y, "#b8422f", 12, 66, "FX_007"); textPop(player.x, player.y - 34, "不屈残火", "#f0c6aa", 16); return; }
+    if(player.hp<=0&&state.character.key==="chihen"&&cs.livesRemaining===1&&state.growthConfig.flags.last_life_immortal&&!cs.lastLifePending){player.hp=1;cs.lastLifePending=true;cs.lastLifeUntil=state.time+state.growthConfig.flags.last_life_immortal.duration;player.invuln=.35;burst(player.x,player.y,"#b8422f",18,95,"FX_007");toast("九命不灭 · 最后一命燃烧",1800);return;}
     if (player.hp <= 0 && !reviveChihen()) beginPlayerDeath();
   }
 
@@ -940,7 +1270,7 @@
         boss.attack = .88;
       }
     }
-    if (boss.summon <= 0) { for (let index = 0; index < (boss.phase === 1 ? 2 : 4); index++) spawnEnemy(pick(["mouse", "bug"])); boss.summon = boss.phase === 1 ? 8 : 5; }
+    if (boss.summon <= 0) { for (let index = 0; index < (boss.phase === 1 ? 2 : 4); index++) spawnEnemy(pick(["inkSpirit", "shadowMouse"])); boss.summon = boss.phase === 1 ? 8 : 5; }
   }
 
   function damageArea(effect) {
@@ -949,13 +1279,13 @@
       if (dist(effect, enemy) >= effect.r + enemy.r) return;
       hits++; hitEnemy(enemy, effect.damage, effect.kind, effect.weaponId, effect.source || null);
       if (effect.knockback) pushFrom(enemy, effect, effect.knockback * (enemy === state.boss ? .22 : 1));
-      if (effect.slow) { enemy._slowUntil = Math.max(enemy._slowUntil || 0, state.time + .8); enemy._slowAmount = Math.max(enemy._slowAmount || 0, effect.slow); }
+      if (effect.slow) { enemy._slowUntil = Math.max(enemy._slowUntil || 0, state.time + (effect.slowDuration || .8)); enemy._slowAmount = Math.max(enemy._slowAmount || 0, effect.slow); }
     });
     return hits;
   }
   function explodeProjectile(projectile) {
     if (projectile.exploded) return; projectile.exploded = true;
-    damageArea({ x: projectile.x, y: projectile.y, r: projectile.explodeRadius, damage: projectile.damage, kind: "inkblast", weaponId: projectile.weaponId });
+    damageArea({ x: projectile.x, y: projectile.y, r: projectile.explodeRadius, damage: projectile.damage, kind: projectile.kind.includes("chihen") ? "chihen-blood-blade-burst" : "inkblast", weaponId: projectile.weaponId, source:projectile.source||null });
     burst(projectile.x, projectile.y, "#252823", 14, Math.min(100, projectile.explodeRadius * .6), projectile.fxId || "FX_002");
     for (let index = 0; index < projectile.childBlasts; index++) {
       const angle = index / projectile.childBlasts * TAU + rand(-.2, .2), radius = projectile.explodeRadius * .58, x = projectile.x + Math.cos(angle) * radius, y = projectile.y + Math.sin(angle) * radius;
@@ -971,7 +1301,7 @@
     state.weaponPulses = state.weaponPulses.filter(pulse => !pulse.fired);
     for (const zone of state.playerZones) {
       zone.life -= dt; zone.nextTick -= dt;
-      if (zone.nextTick <= 0 && zone.life > 0) { zone.nextTick += zone.tick; damageArea(zone); }
+      if (zone.nextTick <= 0 && zone.life > 0) { zone.nextTick += zone.tick; damageArea(zone);if(zone.bindDuration){forEachEnemy(enemy=>{if(dist(zone,enemy)>=zone.r+enemy.r)return;enemy._boundZones||=new Set();if(!enemy._boundZones.has(zone)){enemy._boundZones.add(zone);enemy.stunUntil=Math.max(enemy.stunUntil||0,state.time+zone.bindDuration);}});} }
       if (zone.life <= 0 && zone.endBlast && !zone.ended) { zone.ended = true; damageArea({ ...zone, r: zone.r * .72, damage: zone.damage * (zone.duration / zone.tick) * zone.endBlast, kind: "sigilburst" }); burst(zone.x, zone.y, "#b8422f", 12, 65, zone.fxId || "FX_005"); }
     }
     state.playerZones = state.playerZones.filter(zone => zone.life > 0);
@@ -1048,6 +1378,7 @@
   function checkLevel() {
     const player = state.player;
     while (player.xp >= player.nextXp) { player.xp -= player.nextXp; player.level++; player.nextXp = levelXpRequirement(player.level); state.pendingLevels++; }
+    recalculatePlayerStats({ healDelta:true });
     if (state.pendingLevels > 0 && state.mode === "playing") { state.pendingLevels--; openUpgrade(false); }
   }
   function spawnObject(kind, label) {
@@ -1055,15 +1386,13 @@
     state.pickups.push({ kind, x: clamp(player.x + Math.cos(angle) * radius, 80, WORLD_W - 80), y: clamp(player.y + Math.sin(angle) * radius, 80, WORLD_H - 80), r: 22, label });
     toast(`${label} 已出现在附近`, 2400);
   }
+  function runTimelineEvent(event) {
+    if(event.type==="object")spawnObject(event.object,event.label);
+    if(event.type==="enemy_wave"){for(const entry of event.enemies||[])for(let index=0;index<(entry.count||1);index++)spawnEnemy(entry.id,Boolean(entry.elite));if(event.label)toast(event.label);}
+    if(event.type==="boss"){spawnBoss();if(event.label)toast(event.label,2600);}
+  }
   function schedules() {
-    const progress = state.time / state.duration, schedule = state.schedules;
-    if (!schedule.chest1 && progress > .2) { schedule.chest1 = true; spawnObject("chest", "宝箱"); }
-    if (!schedule.elite1 && progress > .29) { schedule.elite1 = true; for (let index = 0; index < 2; index++) spawnEnemy(pick(["hedgehog", "bee"]), true); toast("赤印精英出现！"); }
-    if (!schedule.merchant && progress > .4) { schedule.merchant = true; spawnObject("merchant", "神秘商人"); }
-    if (!schedule.chest2 && progress > .54) { schedule.chest2 = true; spawnObject("chest", "稀有宝箱"); }
-    if (!schedule.event && progress > .62) { schedule.event = true; spawnObject("event", "庭院奇遇"); }
-    if (!schedule.elite2 && progress > .7) { schedule.elite2 = true; for (let index = 0; index < 3; index++) spawnEnemy(pick(["snail", "frog", "bee"]), true); toast("高压精英潮来袭！"); }
-    if (!state.bossSpawned && state.time >= state.duration - (state.duration < 120 ? 30 : 75)) spawnBoss();
+    for(const event of RUN_TIMELINE?.events||[]){if(state.schedules[event.id]||state.time<event.at)continue;state.schedules[event.id]=true;runTimelineEvent(event);}
   }
 
   function openShop() {
@@ -1085,6 +1414,7 @@
   }
   function applyShopUpgrade(choice) {
     if (choice.type === "weapon") setWeaponLevel(choice.id, choice.level, { fromUpgrade:true, rarity:choice.rarity || "common" });
+    if (choice.type === "exclusive") setExclusiveLevel(choice.level);
     if (choice.type === "device") setDeviceLevel(choice.id, choice.level);
     if (choice.type === "summon") setSummonLevel(choice.id, choice.level);
     if (choice.type === "growthcard") applyGrowthCard(choice);
@@ -1116,13 +1446,15 @@
       // Keep the full 84px hero sprite inside the ink-court border as well as the
       // smaller physics circle. This also prevents camera-edge oscillation.
       const edgeInset = Math.max(60, player.r);
-      player.x = clamp(player.x + x * player.speed * dt, edgeInset, WORLD_W - edgeInset); player.y = clamp(player.y + y * player.speed * dt, edgeInset, WORLD_H - edgeInset);
+      const moveSpeed = player.speed * effectiveMoveSpeedMultiplier();
+      player.x = clamp(player.x + x * moveSpeed * dt, edgeInset, WORLD_W - edgeInset); player.y = clamp(player.y + y * moveSpeed * dt, edgeInset, WORLD_H - edgeInset);
       player.movedDistance += Math.hypot(player.x - oldX, player.y - oldY); player.facing = x < 0 ? -1 : x > 0 ? 1 : player.facing || 1;
       if (state.growthConfig.flags.distance_charge && player.movedDistance >= state.growthConfig.flags.distance_charge.distance) state.characterState.stepEdgeCharged = true;
     }
     player.invuln = Math.max(0, player.invuln - dt);
   }
-  function phase() { const progress = state.time / state.duration; if (state.bossSpawned) return "最终决战"; if (progress < .25) return "快速成型"; if (progress < .62) return "中压构筑"; return "高压怪潮"; }
+  function remainingDay(time=state.time){return Math.max(0,Math.round((RUN_TIMELINE?.start_day||66)*(1-clamp(time/state.duration,0,1))));}
+  function phase() { if (state.bossSpawned) return "0日 · 最终决战"; return `${remainingDay()}日 · ${timelinePhase().name}`; }
   function update(dt) {
     if (state.mode === "dying") {
       if (state.dev && state.devLabOpen && state.devRunPaused) return;
@@ -1152,18 +1484,21 @@
     if (state.boss) ui.bossBar.style.width = `${clamp(state.boss.hp / state.boss.maxHp * 100, 0, 100)}%`;
     const cs = state.characterState;
     if (state.character.key === "chihen") { ui.mechanic.className = "character-mechanic chihen"; ui.mechanic.innerHTML = `<b>九命 ${cs.livesRemaining}</b><span>墨环 ${cs.shieldCharges}</span><small>复生 ${cs.revivesUsed} 次 · 攻势随死亡提升</small>`; }
-    else if (state.character.key === "qingyan") { const alive = state.summons.filter(summon => !summon.dead).length, empowered = Math.max(0, cs.empowerUntil - state.time); ui.mechanic.className = `character-mechanic qingyan${empowered > 0 ? " empowered" : ""}`; ui.mechanic.style.setProperty("--energy", `${cs.energy / cs.energyMax * 100}%`); ui.mechanic.innerHTML = `<b>伙伴 ${alive}/${state.summons.length}</b><span>墨能 ${Math.floor(cs.energy)}/${cs.energyMax}</span><small>${empowered > 0 ? `共鸣 ${empowered.toFixed(1)}s` : cs.deathLinkUntil > state.time ? "阵亡联动强化" : cs.wardUntil > state.time ? "砚光护阵展开" : "召唤独立成长"}</small>`; }
+    else if (state.character.key === "qingyan") { const alive = state.summons.filter(summon => !summon.dead).length + livingInkSpirits().length, empowered = Math.max(0, cs.empowerUntil - state.time); ui.mechanic.className = `character-mechanic qingyan${empowered > 0 || cs.armyUntil > state.time ? " empowered" : ""}`; ui.mechanic.style.setProperty("--energy", `${cs.energy / cs.energyMax * 100}%`); ui.mechanic.innerHTML = `<b>墨灵 ${alive}</b><span>墨能 ${Math.floor(cs.energy)}/${cs.energyMax}</span><small>${cs.armyUntil > state.time ? `百鬼墨行 ${(cs.armyUntil-state.time).toFixed(1)}s` : empowered > 0 ? `共鸣 ${empowered.toFixed(1)}s` : cs.deathLinkUntil > state.time ? "阵亡联动强化" : "画灵共鸣 · 每只 +6%"}</small>`; }
     else { ui.mechanic.className = "character-mechanic hidden"; ui.mechanic.textContent = ""; }
   }
   function updateDock() {
     if (!state.player) return;
     ui.dock.innerHTML = "";
+    const exclusive=combatKitFor(state.character)?.exclusive;if(exclusive)ui.dock.insertAdjacentHTML("beforeend", `<div class="weapon-slot exclusive-slot" title="${exclusive.name}">${exclusive.icon}<small>${state.player.exclusiveLevel}</small></div>`);
     Object.entries(state.player.weapons).forEach(([id, level]) => ui.dock.insertAdjacentHTML("beforeend", `<div class="weapon-slot" title="${WEAPONS[id].name}">${WEAPONS[id].icon}<small>${level}</small></div>`));
     Object.entries(state.player.devices).forEach(([id, level]) => ui.dock.insertAdjacentHTML("beforeend", `<div class="weapon-slot" title="${DEVICES[id].name}">${DEVICES[id].icon}<small>${level}</small></div>`));
     state.summons?.forEach(summon => ui.dock.insertAdjacentHTML("beforeend", `<div class="weapon-slot summon-slot vfx-tier-${summonVfxTier(summon)}${summon.dead ? " is-dead" : ""}" title="${summon.name}">${summon.icon}<small>${summon.dead ? "归" : summon.level}</small></div>`));
+    if(state.character.key==="qingyan"&&livingInkSpirits().length)ui.dock.insertAdjacentHTML("beforeend", `<div class="weapon-slot summon-slot vfx-tier-2" title="当前墨灵">灵<small>${livingInkSpirits().length}</small></div>`);
   }
   function buildSummary() {
     const items = [];
+    const exclusive=combatKitFor(state.character)?.exclusive;if(exclusive)items.push([`${exclusive.icon} ${exclusive.name}`,`Lv.${state.player.exclusiveLevel}`]);
     Object.entries(state.player.weapons).forEach(([id, level]) => items.push([`${WEAPONS[id].icon} ${WEAPONS[id].name}`, `Lv.${level}`]));
     Object.entries(state.player.devices).forEach(([id, level]) => items.push([`${DEVICES[id].icon} ${DEVICES[id].name}`, `Lv.${level}`]));
     Object.entries(state.player.passives).forEach(([id, level]) => items.push([`${PASSIVES[id].icon} ${PASSIVES[id].name}`, `Lv.${level}`]));
@@ -1177,19 +1512,15 @@
     if (state.mode === "result") return;
     state.mode = "result"; state.won = win; ui.hud.classList.add("hidden"); ui.joystick.classList.add("hidden"); ui.pause.classList.add("hidden");
     const survived = Math.min(state.time, state.duration), reward = Math.floor(state.coins * (win ? 1 : .45) + state.kills * .08 + (win ? 80 : 0));
-    let challengeCompleted = "";
+    let spReward = 0;
     if (!state.dev) {
       profile.best = Math.max(profile.best, Math.floor(survived)); profile.coins += reward; if (win) profile.wins++;
-      const challengeNode = growthNodesFor(state.character).find(node => node.node_type === "CHALLENGE" && hasGrowthNode(node.node_id));
-      if (win && challengeNode && state.challengeId === challengeNode.challenge_id && growth.challenges[challengeNode.challenge_id] !== "complete") {
-        const passed = state.character.key === "moxiaobai" ? Object.keys(state.player.weapons).length <= 1 : state.character.key === "chihen" ? state.characterState.livesRemaining === 0 : state.character.key === "qingyan" ? state.summons.length === 0 : false;
-        if (passed) { growth.challenges[challengeNode.challenge_id] = "complete"; saveGrowth(); challengeCompleted = ` · 已完成${state.character.name}专属挑战`; }
-      }
+      spReward=Math.max(1,Math.floor(state.player.level/6))+(win?2:0);growth.sp+=spReward;saveGrowth();
       saveProfile();
     }
     $("resultBadge").textContent = win ? "胜" : "止"; $("resultKicker").textContent = win ? "墨战落幕" : "本次试炼结束"; $("resultTitle").textContent = win ? "旧庭重归宁静" : "这一笔尚未写完";
-    $("resultLine").textContent = state.dev ? "DEV 测试数据未写入正式存档。" : win ? `最后一笔落下，群墨归纸。${challengeCompleted}` : "保留经验，重新整备再入庭院。";
-    $("resultStats").innerHTML = [["存活", fmt(survived)], ["击散", state.kills], ["最高伤害", Math.round(state.highHit)], ["获得铜钱", reward]].map(item => `<div class="stat"><b>${item[1]}</b><small>${item[0]}</small></div>`).join("");
+    $("resultLine").textContent = state.dev ? "DEV 测试数据未写入正式存档。" : win ? `最后一笔落下，群墨归纸。获得 ${spReward} 修行点。` : `保留经验，获得 ${spReward} 修行点。`;
+    $("resultStats").innerHTML = [["存活", fmt(survived)], ["击散", state.kills], ["最高伤害", Math.round(state.highHit)], ["获得铜钱", reward], ["修行点", state.dev?0:spReward]].map(item => `<div class="stat"><b>${item[1]}</b><small>${item[0]}</small></div>`).join("");
     $("resultBuild").innerHTML = buildSummary().map(item => `<span>${item[0]} ${item[1]}</span>`).join("");
     ui.result.classList.remove("hidden"); window.dispatchEvent(new CustomEvent("meow-run-ended")); if (win) sound("win");
   }
@@ -1229,21 +1560,26 @@
       const id = objectId(summon, "summon"); active.add(id); const empowered = cs.empowerUntil > state.time || cs.deathLinkUntil > state.time || summon.buffUntil > state.time, tier = summonVfxTier(summon);
       const node = ensureNode(id, `summon summon-${summon.type} vfx-tier-${tier}${empowered ? " empowered" : ""}`, `${imageMarkup(summon, summon.name)}<i></i>`); node.title = `${summon.name} Lv.${summon.level} ${Math.ceil(summon.hp)}/${Math.ceil(summon.maxHp)}`; node.style.setProperty("--summon-hp", `${clamp(summon.hp / summon.maxHp * 100, 0, 100)}%`); place(node, summon.x, summon.y, tier === 3 ? 1.08 : 1);
     }
+    for (const spirit of state.inkSpirits || []) if (!spirit.dead) {
+      const id=objectId(spirit,"ink-spirit");active.add(id);const empowered=spirit.buffUntil>state.time||cs.armyUntil>state.time;
+      const node=ensureNode(id,`summon summon-mouse ink-spirit${spirit.big?" big-spirit":""}${spirit.temporary?" temporary-spirit":""}${empowered?" empowered":""}`,`${imageMarkup(spirit,spirit.name)}<i></i>`);node.title=`${spirit.name} ${Math.ceil(spirit.hp)}/${Math.ceil(spirit.maxHp)}`;node.style.setProperty("--summon-hp",`${clamp(spirit.hp/spirit.maxHp*100,0,100)}%`);place(node,spirit.x,spirit.y,spirit.big?1.35:spirit.temporary?1.05:.92);
+    }
     for (const echo of cs.echoes || []) {
       const id = objectId(echo,"summon-echo"); active.add(id); const art = SUMMONS[echo.type]; const node = ensureNode(id, `summon summon-${echo.type} summon-echo vfx-tier-2`, imageMarkup(art, "余魂墨影")); node.style.opacity = String(clamp(echo.life / echo.max * .58,0,.58)); place(node,echo.x,echo.y,.92);
     }
 
     for (const enemy of state.enemies) {
       const id = objectId(enemy, "enemy"); active.add(id);
-      const size = Math.max(48, enemy.r * (enemy.elite ? 4.6 : 4.1));
-      const node = ensureNode(id, `entity enemy ${enemy.art_variant || ""}${enemy.elite ? " elite" : ""}${enemy.dead ? " dying" : ""}`, imageMarkup(enemy));
+      const asset=assetEntry(enemy),hasAnimation=Object.values(asset?.animations||{}).some(stateFrames=>Object.values(stateFrames||{}).some(frames=>Array.isArray(frames)&&frames.length)),size = Math.max(48, enemy.r * (enemy.elite ? 4.6 : 4.1))*(asset?.scale||1);
+      const node = ensureNode(id, `entity enemy ${enemy.art_variant || ""}${enemy.elite ? " elite" : ""}${enemy.dead ? " dying" : ""}${hasAnimation?" configured-sprite":""}`, imageMarkup(configuredFrameResource(enemy),enemy.name));
       node.style.width = `${size}px`; node.style.height = `${size}px`;
+      node.style.setProperty("--sprite-anchor-y",`${-(asset?.anchor?.y||.86)*100}%`);
       place(node, enemy.dead ? enemy.deathX : enemy.x, enemy.dead ? enemy.deathY : enemy.y + Math.sin(enemy.phase) * 2);
     }
     if (state.boss && !state.boss.dead) {
       const id = "boss"; active.add(id);
       const node = ensureNode(id, `entity boss phase-${state.boss.phase}`, imageMarkup(BOSS));
-      place(node, state.boss.x, state.boss.y);
+      place(node, state.boss.x, state.boss.y,assetEntry(BOSS)?.scale||1);
     }
     for (const projectile of state.projectiles) {
       const id = objectId(projectile, "projectile"); active.add(id);
@@ -1288,21 +1624,23 @@
 
   function clearNormalEnemies() { state.enemies = state.enemies.filter(enemy => enemy.elite); }
   function clearAllEnemies() { state.enemies = []; state.enemyShots = []; state.hazards = []; state.boss = null; state.bossSpawned = false; ui.bossHud.classList.add("hidden"); }
-  function clearBattlefield() { clearAllEnemies(); state.projectiles = []; state.pickups = []; state.particles = []; state.texts = []; state.playerZones = []; state.weaponPulses = []; state.orbiters = []; state.devices = []; syncTurretDevice(); }
-  function spawnMixed(count) { const ids = Object.keys(ENEMY_TYPES); for (let index = 0; index < count; index++) spawnEnemy(pick(ids)); }
+  function clearBattlefield() { clearAllEnemies(); state.projectiles = []; state.pickups = []; state.particles = []; state.texts = []; state.playerZones = []; state.weaponPulses = []; state.orbiters = []; state.devices = []; state.inkSpirits = []; state.delayedEffects = []; syncTurretDevice(); }
+  function spawnMixed(count) { for (let index = 0; index < count; index++) spawnEnemy(weightedEnemyPick()); }
   function spawnEnemyBatch(type, count, elite = false) { if (!ENEMY_TYPES[type]) return; for (let index = 0; index < count; index++) spawnEnemy(type, elite); }
-  function triggerEliteWave() { for (let index = 0; index < 4; index++) spawnEnemy(pick(Object.keys(ENEMY_TYPES)), true); }
+  function triggerEliteWave() { const ids=Object.keys(ENEMY_TYPES).filter(id=>ENEMY_TYPES[id].category==="elite");for (let index = 0; index < 4; index++) spawnEnemy(pick(ids)); }
   function triggerChest() { spawnObject("chest", "宝箱"); }
-  function setStage(progress, bossNow = false) { state.time = clamp(progress, 0, 1) * state.duration; if (bossNow) spawnBoss(); }
+  function setTimelineTime(time,bossNow=false){state.time=clamp(time,0,state.duration);for(const event of RUN_TIMELINE?.events||[])state.schedules[event.id]=event.at<=state.time;if(bossNow)spawnBoss();updateHud();}
+  function setStage(progress, bossNow = false) { setTimelineTime(clamp(progress,0,1)*state.duration,bossNow); }
+  function setTimelineDay(day){const numeric=Math.max(0,Math.min(RUN_TIMELINE?.start_day||66,Number(day)||0)),mapped=RUN_TIMELINE?.dev_days?.[numeric],time=Number.isFinite(mapped)?mapped:state.duration*(1-numeric/(RUN_TIMELINE?.start_day||66));clearAllEnemies();setTimelineTime(time,numeric===0);toast(numeric===0?"0日 · Boss 测试":"已跳转至剩余天数："+numeric+"日",1500);}
   function forceBossPhase2() { const boss = state.boss || spawnBoss(); boss.hp = Math.min(boss.hp, boss.maxHp * .45); boss.phase = 2; }
   function setBossHealth(ratio) { const boss = state.boss || spawnBoss(); boss.hp = clamp(Number(ratio), 0, 1) * boss.maxHp; }
   function killBossForTest() { const boss = state.boss || spawnBoss(); hitEnemy(boss, boss.hp + 1, "dev"); }
   function healFull() { if (state.player) state.player.hp = state.player.maxHp; }
-  function setPlayerLevel(level) { const player = state.player; player.level = Math.max(1, Math.round(level)); player.nextXp = levelXpRequirement(player.level); player.xp = clamp(player.xp || 0, 0, player.nextXp - 1); }
+  function setPlayerLevel(level) { const player = state.player; player.level = Math.max(1, Math.round(level)); player.nextXp = levelXpRequirement(player.level); player.xp = clamp(player.xp || 0, 0, player.nextXp - 1); recalculatePlayerStats(); }
   function setPlayerValue(key, value) {
     const player = state.player, number = Number(value); if (!Number.isFinite(number)) return;
     if (key === "level") setPlayerLevel(number); else if (key === "hp") player.hp = clamp(number, 0, player.maxHp); else if (key === "coins") state.coins = Math.max(0, number); else if (key === "rerolls") state.rerolls = Math.max(0, Math.round(number));
-    else if (["maxHp", "speed", "damageMul", "attackSpeed", "crit", "armor", "pickup", "size"].includes(key)) { player.base[key] = number; recalculatePlayerStats(); }
+    else if (["maxHp", "attack", "speed", "damageMul", "attackSpeed", "crit", "critDamage", "cooldownMul", "armor", "pickup", "size"].includes(key)) { player.base[key] = number; recalculatePlayerStats(); }
     updateHud();
   }
   function resetDevPlayer() { if (!state.dev) return; const x = state.player.x, y = state.player.y, character = state.character || CHARACTER; state.growthConfig = compileGrowthConfig(character); state.slotRules = { ...character.slot_rules, weapon:character.slot_rules.weapon + (state.growthConfig.slots.weapon || 0), device:character.slot_rules.device + (state.growthConfig.slots.device || 0), summon:character.slot_rules.summon + (state.growthConfig.slots.summon || 0) }; state.player = createPlayer(character, true, state.growthConfig); state.player.x = x; state.player.y = y; state.devices = []; initializeCharacterRun(); recalculatePlayerStats(); updateDock(); updateHud(); }
@@ -1312,27 +1650,30 @@
     state.timers = { ...Object.fromEntries(Object.keys(WEAPONS).map(id => [id, 0])), trap: 2, turret: 0 };
     setPlayerLevel(levels[name] || 1);
     const giveWeapons = entries => Object.entries(entries).forEach(([id, level]) => setWeaponLevel(id, level));
-    if (name === "early") { giveWeapons({ yarn: 2 }); spawnMixed(8); }
-    if (name === "mid") { giveWeapons({ yarn: 3, fish: 3, paw: 2, ink: 2 }); setPassiveLevel("power", 1); setPassiveLevel("haste", 1); setDeviceLevel("turret", 1); spawnMixed(30); }
-    if (name === "late") { giveWeapons({ yarn: 5, fish: 5, paw: 4, laser: 5, ink: 4, fan: 3, mist: 3, wave: 3 }); setPassiveLevel("power", 3); setPassiveLevel("haste", 2); setPassiveLevel("health", 2); setDeviceLevel("turret", 3); setDeviceLevel("trap", 2); spawnMixed(60); }
-    if (name === "boss") { giveWeapons({ yarn: 5, fish: 4, paw: 4, laser: 5, ink: 5, fan: 4, wave: 4, chain: 4 }); setPassiveLevel("power", 3); setPassiveLevel("haste", 3); setPassiveLevel("health", 2); setPassiveLevel("armor", 2); Object.keys(DEVICES).forEach(id => setDeviceLevel(id, DEVICES[id].max)); spawnBoss(); }
-    if (["max", "stress"].includes(name)) { Object.keys(WEAPONS).forEach(id => setWeaponLevel(id, WEAPONS[id].max)); Object.keys(PASSIVES).forEach(id => setPassiveLevel(id, PASSIVES[id].max)); Object.keys(DEVICES).forEach(id => setDeviceLevel(id, DEVICES[id].max)); }
+    if (name === "early") { setExclusiveLevel(2); giveWeapons({ yarn: 1 }); spawnMixed(8); }
+    if (name === "mid") { setExclusiveLevel(4); giveWeapons({ yarn: 3, fish: 3, paw: 2, ink: 2 }); setPassiveLevel("power", 1); setPassiveLevel("haste", 1); setDeviceLevel("turret", 1); spawnMixed(30); }
+    if (name === "late") { setExclusiveLevel(6); giveWeapons({ yarn: 5, fish: 5, paw: 4, laser: 5, ink: 4, fan: 3, mist: 3, wave: 3 }); setPassiveLevel("power", 3); setPassiveLevel("haste", 2); setPassiveLevel("health", 2); setDeviceLevel("turret", 3); setDeviceLevel("trap", 2); spawnMixed(60); }
+    if (name === "boss") { setExclusiveLevel(7); giveWeapons({ yarn: 5, fish: 4, paw: 4, laser: 5, ink: 5, fan: 4, wave: 4, chain: 4 }); setPassiveLevel("power", 3); setPassiveLevel("haste", 3); setPassiveLevel("health", 2); setPassiveLevel("armor", 2); Object.keys(DEVICES).forEach(id => setDeviceLevel(id, DEVICES[id].max)); spawnBoss(); }
+    if (["max", "stress"].includes(name)) { setExclusiveLevel(7); Object.keys(WEAPONS).forEach(id => setWeaponLevel(id, WEAPONS[id].max)); Object.keys(PASSIVES).forEach(id => setPassiveLevel(id, PASSIVES[id].max)); Object.keys(DEVICES).forEach(id => setDeviceLevel(id, DEVICES[id].max)); }
     if (name === "max") spawnMixed(30);
     if (name === "stress") { state.player.base.maxHp = 1000; state.player.base.damageMul = 3; recalculatePlayerStats(); spawnMixed(150); }
     healFull(); updateDock(); updateHud(); toast(`PRESET: ${name.toUpperCase()}`);
   }
   function getBuildSnapshot() {
     const player = state.player;
-    return { version: 4, character: state.character.key, base: { ...player.base }, hp: player.hp, level: player.level, xp: player.xp, weapons: { ...player.weapons }, passives: { ...player.passives }, passiveWeights: { ...player.passiveWeights }, devices: { ...player.devices }, summonLevels: { ...player.summonLevels }, growthCards: { ...player.growthCards }, coins: state.coins, rerolls: state.rerolls };
+    return { version: 5, character: state.character.key, base: { ...player.base }, hp: player.hp, level: player.level, xp: player.xp, exclusiveLevel:player.exclusiveLevel, weapons: { ...player.weapons }, passives: { ...player.passives }, passiveWeights: { ...player.passiveWeights }, devices: { ...player.devices }, summonLevels: { ...player.summonLevels }, growthCards: { ...player.growthCards }, coins: state.coins, rerolls: state.rerolls };
   }
   function loadBuildSnapshot(data) {
     if (!data || typeof data !== "object") throw new Error("Build 必须是 JSON 对象");
     if (data.character && CHARACTERS[data.character]) { state.character = CHARACTERS[data.character]; homeCharacterKey = data.character; }
     resetDevPlayer(); const player = state.player; $("hudHeroName").textContent = state.character.name; setArtImage($("hudHeroImage"), portraitResource(state.character), state.character.name);
-    if (data.base && typeof data.base === "object") for (const key of ["maxHp", "speed", "damageMul", "attackSpeed", "crit", "size", "armor", "pickup"]) if (Number.isFinite(Number(data.base[key]))) player.base[key] = Number(data.base[key]);
+    if (data.base && typeof data.base === "object") for (const key of ["maxHp", "attack", "speed", "damageMul", "attackSpeed", "crit", "critDamage", "cooldownMul", "size", "armor", "pickup"]) if (Number.isFinite(Number(data.base[key]))) player.base[key] = Number(data.base[key]);
+    setExclusiveLevel(data.exclusiveLevel || 1);
     setPlayerLevel(data.level || 1); player.xp = clamp(Number(data.xp) || 0, 0, player.nextXp - 1);
     Object.keys(WEAPONS).forEach(id => setWeaponLevel(id, Number(data.weapons?.[id]) || 0)); Object.keys(PASSIVES).forEach(id => setPassiveLevel(id, Number(data.passives?.[id]) || 0, Number(data.passiveWeights?.[id]) || Number(data.passives?.[id]) || 0)); Object.keys(DEVICES).forEach(id => setDeviceLevel(id, Number(data.devices?.[id]) || 0)); Object.keys(SUMMONS).forEach(id => setSummonLevel(id, Number(data.summonLevels?.[id]) || 0)); player.growthCards = Object.fromEntries(Object.entries(data.growthCards || {}).filter(([id,value]) => GROWTH_CARDS[id] && Number(value) > 0).map(([id,value]) => [id,Math.max(1,Math.round(Number(value)))]));
-    recalculatePlayerStats(); player.hp = clamp(Number.isFinite(Number(data.hp)) ? Number(data.hp) : player.maxHp, 0, player.maxHp); state.coins = Math.max(0, Number(data.coins) || 0); state.rerolls = Math.max(0, Math.round(Number(data.rerolls) || 0)); updateDock(); updateHud();
+    recalculatePlayerStats(); player.hp = clamp(Number.isFinite(Number(data.hp)) ? Number(data.hp) : player.maxHp, 0, player.maxHp); state.coins = Math.max(0, Number(data.coins) || 0); state.rerolls = Math.max(0, Math.round(Number(data.rerolls) || 0));
+    if(state.dev){state.mode="playing";state.started=true;[ui.upgrade,ui.shop,ui.event,ui.pause,ui.result].forEach(panel=>panel.classList.add("hidden"));ui.hud.classList.remove("hidden");ui.joystick.classList.remove("hidden");last=performance.now();}
+    updateDock(); updateHud();
   }
   function getDevStats() {
     const current = state.time, buckets = state.damageBuckets || [], one = buckets.reduce((sum, bucket) => sum + (bucket.t >= current - 1 ? bucket.amount : 0), 0), ten = buckets.reduce((sum, bucket) => sum + (bucket.t >= current - 10 ? bucket.amount : 0), 0);
@@ -1343,11 +1684,12 @@
 
   const devApi = {
     setLabOpen: setDevLabOpen, setPaused: setDevPaused, setSpeed: value => state.simSpeed = clamp(Number(value) || 1, .5, 4), setInvincible: value => state.invincible = Boolean(value), setInfiniteRerolls: value => state.infiniteRerolls = Boolean(value),
-    setPlayerValue, healFull, addLevels: amount => setPlayerLevel(state.player.level + amount), setWeaponLevel, setPassiveLevel, setDeviceLevel,
+    setPlayerValue, healFull, addLevels: amount => setPlayerLevel(state.player.level + amount), setWeaponLevel, setExclusiveLevel, setPassiveLevel, setDeviceLevel,
+    useActiveSkill: id => useActiveSkill(id,{force:true}), resetSkillCooldowns:()=>{Object.keys(state.characterState.skillCooldowns||{}).forEach(id=>state.characterState.skillCooldowns[id]=0);state.characterState.skillCharges={...state.characterState.skillMaxCharges};updateSkillBar();},
     spawnEnemy: spawnEnemyBatch, spawnMixed, clearNormalEnemies, clearAllEnemies, spawnBoss, forceBossPhase2, setBossHealth, killBoss: killBossForTest,
-    openUpgrade: () => openUpgrade(false), openShop, triggerChest, openEvent, triggerEliteWave, setStage, applyPreset, getStats: getDevStats,
+    openUpgrade: () => openUpgrade(false), openShop, triggerChest, openEvent, triggerEliteWave, setStage, setTimelineDay, playVFX, applyPreset, getStats: getDevStats,
     getBuild: getBuildSnapshot, loadBuild: loadBuildSnapshot, resetPlayer: resetDevPlayer, resetRun: () => resetGame(true), clearBattlefield,
-    getConfig: () => ({ WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, GROWTH_CARDS, ENEMY_TYPES, CHARACTERS, CHARACTER_ANIMATIONS, INK_FX }), getState: () => state
+    getConfig: () => ({ WEAPONS, PASSIVES, DEVICES, SUMMONS, QINGYAN_SUMMON_CATALOG, SKILL_TREE, GROWTH_CARDS, ENEMY_TYPES, CHARACTERS, CHARACTER_ANIMATIONS, CHARACTER_COMBAT_KITS, INK_FX, ASSET_MANIFEST, VFX_LIBRARY, SCENE_LAYERS, RUN_TIMELINE }), getState: () => state
   };
 
   function loop(now) {
@@ -1363,6 +1705,7 @@
   $("characterButton").onclick = () => { renderCharacterChoices(); $("characterPanel").classList.remove("hidden"); };
   $("growthButton").onclick = () => openGrowthPanel(homeCharacterKey); $("weaponButton").onclick = () => showInfo("weapons"); $("settingsButton").onclick = () => showInfo("settings"); $("saveButton").onclick = () => showInfo("save");
   $("growthReset").onclick = resetGrowthTree;
+  $("growthBranchClose").onclick = closeGrowthBranch;
   document.querySelectorAll("[data-close]").forEach(button => button.onclick = () => $(button.dataset.close).classList.add("hidden"));
   $("rerollButton").onclick = () => { if (state.rerolls <= 0 && !state.infiniteRerolls) return; if (!state.infiniteRerolls) state.rerolls--; ui.rerolls.textContent = state.rerolls; renderUpgradeChoices(); };
   $("leaveShop").onclick = closeShop;
@@ -1370,7 +1713,13 @@
   $("pauseButton").onclick = pause; $("resumeButton").onclick = resume; $("quitButton").onclick = () => endGame(false);
   $("againButton").onclick = () => resetGame(Boolean(state.dev));
   $("menuButton").onclick = () => { state = { mode: "menu" }; clearWorldNodes(); ui.result.classList.add("hidden"); ui.menu.classList.remove("hidden"); renderHomeCharacter(homeCharacterKey); window.dispatchEvent(new CustomEvent("meow-dev-ended")); };
-  addEventListener("keydown", event => { keys.add(event.code); if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault(); if ((event.code === "Escape" || event.code === "KeyP") && !event.repeat) { if (state.mode === "playing") pause(); else if (state.mode === "paused") resume(); } });
+  addEventListener("keydown", event => {
+    const typing=["INPUT","TEXTAREA","SELECT"].includes(document.activeElement?.tagName);if(!typing)keys.add(event.code);
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code) && !typing) event.preventDefault();
+    if(!typing&&!event.repeat){const skillKey={KeyQ:"skill1",Digit1:"skill1",KeyE:"skill2",Digit2:"skill2",KeyR:"skill3",Digit3:"skill3",KeyF:"ultimate",Digit4:"ultimate"}[event.code];if(skillKey)useActiveSkill(skillKey);}
+    if(event.code==="Escape"&&!event.repeat&&!typing&&growthBranchOpen&&!$("growthPanel").classList.contains("hidden")){closeGrowthBranch();return;}
+    if ((event.code === "Escape" || event.code === "KeyP") && !event.repeat && !typing) { if (state.mode === "playing") pause(); else if (state.mode === "paused") resume(); }
+  });
   addEventListener("keyup", event => keys.delete(event.code));
   ui.joystick.addEventListener("pointerdown", event => { joy.active = true; joy.id = event.pointerId; ui.joystick.setPointerCapture(event.pointerId); moveJoy(event); });
   ui.joystick.addEventListener("pointermove", event => { if (joy.active && event.pointerId === joy.id) moveJoy(event); });
@@ -1378,6 +1727,6 @@
   function moveJoy(event) { const rect = ui.joystick.getBoundingClientRect(), centerX = rect.left + rect.width / 2, centerY = rect.top + rect.height / 2, dx = event.clientX - centerX, dy = event.clientY - centerY, length = Math.hypot(dx, dy), amount = Math.min(1, length / 43); joy.x = length ? dx / length * amount : 0; joy.y = length ? dy / length * amount : 0; ui.joystick.firstElementChild.style.transform = `translate(${joy.x * 34}px,${joy.y * 34}px)`; }
   function endJoy() { joy.active = false; joy.x = joy.y = 0; ui.joystick.firstElementChild.style.transform = ""; }
 
-  window.__MEOW_GAME__ = { getState: () => state, start: resetGame, end: (win = true) => endGame(win), dev: devApi, data: { WEAPONS, PASSIVES, DEVICES, SUMMONS, SKILL_TREE, GROWTH_CARDS, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, CHARACTER_ANIMATIONS, LEGACY_ASSET_MAP, INK_FX }, growth: { getState:()=>growth, hasNode:hasGrowthNode, compile:compileGrowthConfig, open:openGrowthPanel } };
+  window.__MEOW_GAME__ = { getState: () => state, start: resetGame, end: (win = true) => endGame(win), dev: devApi, data: { WEAPONS, PASSIVES, DEVICES, SUMMONS, QINGYAN_SUMMON_CATALOG, SKILL_TREE, GROWTH_CARDS, ENEMY_TYPES, BOSS, CHARACTER, CHARACTERS, CHARACTER_ANIMATIONS, CHARACTER_COMBAT_KITS, LEGACY_ASSET_MAP, INK_FX, ASSET_MANIFEST, VFX_LIBRARY, SCENE_LAYERS, RUN_TIMELINE }, growth: { getState:()=>growth, hasNode:hasGrowthNode, compile:compileGrowthConfig, open:openGrowthPanel } };
   if (new URLSearchParams(location.search).get("dev") === "1") resetGame(true);
 })();
